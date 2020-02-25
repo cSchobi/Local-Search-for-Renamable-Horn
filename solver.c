@@ -14,6 +14,13 @@
 #define DEBUG_PRINT_iARRAY(x, n) do {} while (0)
 #endif
 
+typedef struct literal{
+	int nClauses;
+	int *clauses;
+	int *status;
+	int size;
+} Literal;
+
 typedef struct solver {
 	int nClauses, nVars;
 	int *memory, *flipped;
@@ -26,6 +33,7 @@ typedef struct solver {
 	int *optFlip;
 	int optNHorn;
 	int *createCount;
+	Literal *literals;
 } Solver;
 
 // Parsing
@@ -35,16 +43,20 @@ int skip_comment(FILE* file);
 void init(Solver* solver);
 void allocate_memory(Solver* solver);
 void free_solver(Solver* solver);
+
+//Setup of solver
 void add_clause(Solver* solver, int* buffer, int size, int nClause);
 void setupSolver(Solver* solver);
+void reset(Solver* solver);
+void updateSolver(Solver* solver, int lit);
+
 //Printing
 void print(Solver* solver);
 void print_status(Solver* solver);
 
 // Search
-void solve_globally(Solver* solver, int maxTries);
 void solve_incrementally(Solver* solver, int maxTries);
-int findNonHornClause(Solver* solver);
+int getNonHornClause(Solver* solver);
 int getLitInClause(Solver* solver, int nClause);
 int getLit(Solver* solver);
 int getLitProb(Solver* solver);
@@ -57,13 +69,11 @@ int isNonHorn(Solver* solver, int nClause);
 int countHornClauses(Solver *solver);
 int isPosLit(Solver* solver, int nClause, int lit);
 void flipLiteral(Solver* solver, int nLit);
-void updateSolver(Solver* solver, int lit);
-int getMinBreakValue(Solver* solver);
+int getMinBreakCount(Solver* solver);
 void updateClause(Solver* solver, int nClause, int lit);
-void updateBreakCount(Solver* solver, int nClause, int lit);
+void updateBreakCreateCount(Solver* solver, int nClause, int lit);
 void updateOptimum(Solver* solver);
 int allClausesAreHorn(Solver* solver);
-void reset(Solver* solver);
 
 //Experiments
 void run_experiments(Solver* solver, int maxFlips);
@@ -75,19 +85,20 @@ int getLitByBreakProb(Solver* solver);
 int getLitByCreate(Solver* solver);
 int getLitByCreateProb(Solver* solver);
 
+/* 
+ * ************************************************************************
+ * */
 int main(int argc, char **argv){
 	Solver solver;
 	if(argc != 2){ printf("Usage: %s fileName\n", argv[0]); exit(0); }
 	init(&solver);
 	if(parse(&solver, argv[1]) == 1){
 		setupSolver(&solver);
-		run_experiments(&solver, 100);
-		/*
+		//run_experiments(&solver, 100);
 		print(&solver);
 		printf("\n\n");
-		//solve_globally(&solver, 10);
 		solve_incrementally(&solver, 10);
-		*/
+		
 	}else
 		printf("Error while parsing file\n");
 	free_solver(&solver);
@@ -259,32 +270,17 @@ void print(Solver* solver){
 
 }
 
-void solve_globally(Solver* solver, int maxFlips){
-	int i, nClause, nLit;
-	print_status(solver);
-	for(i = 0; i < maxFlips; i++){
-		DEBUG_PRINT(("Trie %i\n", i));
-		nClause = findNonHornClause(solver);
-		DEBUG_PRINT(("Chosen Non Horn Clause: %i\n", nClause));
-		if(nClause < 0) // no clause can be flipped -> process is done
-			return;
-		nLit = getLitInClause(solver, nClause);
-		flipLiteral(solver, nLit);
-		print_status(solver);
-	}
-}
-
 void solve_incrementally(Solver* solver, int maxFlips){
-	int i, lit;
+	int i, lit, clause;
 	print_status(solver);
 	for(i = 0; i < maxFlips; i++){
 		DEBUG_PRINT(("Trie: %i\n", i));
-		if(allClausesAreHorn(solver)){
-		   printf("Done\n");
+		clause = getNonHornClause(solver);
+		if(clause == -1){
+		   DEBUG_PRINT(("Done\n"));
 	   	   break;
 		}
-		lit = getLit(solver);
-		//lit = getLitProb(solver);
+		lit = getLitInClause(solver, clause);
 		updateSolver(solver, lit);
 		flipLiteral(solver, lit);
 		updateOptimum(solver);
@@ -307,7 +303,7 @@ int allClausesAreHorn(Solver* solver){
  * */
 int getLit(Solver* solver){
 	int min, i = 0, litIndex, nLiterals = 1;
-	min = getMinBreakValue(solver);
+	min = getMinBreakCount(solver);
 	while( i < solver->nVars && solver->breakCount[i] != min) i++; // get first literal with minimum break count
 	litIndex = i;
 	for(; i < solver->nVars; i++){
@@ -353,14 +349,14 @@ void updateSolver(Solver* solver, int lit){
  * if necessary
  * */
 void updateClause(Solver* solver, int nClause, int lit){
-	updateBreakCount(solver, nClause, lit);
+	updateBreakCreateCount(solver, nClause, lit);
 	if(isPosLit(solver, nClause, lit)) 
 		solver->posLiterals[nClause]--;
 	else 
 		solver->posLiterals[nClause]++;
 }
 
-void updateBreakCount(Solver* solver, int nClause, int lit){
+void updateBreakCreateCount(Solver* solver, int nClause, int lit){
 	int i, nPosLiterals;
 	nPosLiterals = solver->posLiterals[nClause];
 	if(isPosLit(solver, nClause, lit)){ // lit is changed from positive to negated
@@ -428,7 +424,7 @@ void updateOptimum(Solver* solver){
 /*
  * returns minimal break value of all variables
  * */
-int getMinBreakValue(Solver* solver){
+int getMinBreakCount(Solver* solver){
 	int min = solver->nClauses, i;
 	for(i = 0; i < solver->nVars; i++){
 		if(solver->breakCount[i] < min) {
@@ -457,8 +453,8 @@ void flipLiteral(Solver* solver, int nLit){
  * nonHorn clause
  * return -1 if no nonHorn clause exists
  * */
-int findNonHornClause(Solver* solver){
-	int i, nNonHorn = 0;
+int getNonHornClause(Solver* solver){
+	int i, nNonHorn = 0, r;
 	int isNonHornClauses[solver->nClauses];
 	for(i = 0; i < solver->nClauses; i++){
 		if(isNonHorn(solver, i)){
@@ -466,8 +462,15 @@ int findNonHornClause(Solver* solver){
 		}
 	}
 	DEBUG_PRINT(("Number of NonHorn clauses: %i\n", nNonHorn));
-	if(nNonHorn > 0) return isNonHornClauses[rand() % nNonHorn];
-	else return -1;
+	if(nNonHorn > 0) {
+		r = rand() % nNonHorn;
+		DEBUG_PRINT(("Chosen non Horn clause: %i\n", r));
+		return isNonHornClauses[r];
+	}
+	else{
+		DEBUG_PRINT(("No non Horn clause found\n"));
+	   	return -1;
+	}
 }
 
 // return 1 if clause  is not a horn clause, 0 otherwise
@@ -503,10 +506,8 @@ int getLitInClause(Solver* solver, int nClause){
 	int breakValues[size];
 	int lit;
 	posLiterals = countPosLits(solver);
-	printf("Pos Literals: ");
-	for(i=0; i < solver->nClauses; i++){
-		printf("%i ", posLiterals[i]);
-	} printf("\n");
+	DEBUG_PRINT(("Pos Literals: "));
+	DEBUG_PRINT_iARRAY(posLiterals, solver->nClauses);
 	for(i = 0; i < size; i++){
 		lit = clause[i];
 		if(isPosLit(solver, nClause, abs(lit))){ 
@@ -521,11 +522,8 @@ int getLitInClause(Solver* solver, int nClause){
 			breakValues[i] = solver->nClauses + 1; // nClauses+1 clauses cannot be broken -> literal will not be considered afterwards
 		}
 	}
-	printf("Break values: ");
-	for(i = 0; i < size; i++){
-		printf("%i ", breakValues[i]);
-	}
-	printf("\n");
+	DEBUG_PRINT(("Break values: "));
+	DEBUG_PRINT_iARRAY(breakValues, size);
     lit = chooseLiteral(clause, breakValues, size, min);		
 	free(posLiterals);	
 	return lit;
@@ -663,7 +661,7 @@ void reset(Solver* solver){
 
 int getLitByBreak(Solver* solver){
 	int min, i = 0, litIndex, nLiterals = 1;
-	min = getMinBreakValue(solver);
+	min = getMinBreakCount(solver);
 	while( i < solver->nVars && solver->breakCount[i] != min) i++; // get first literal with minimum break count
 	litIndex = i;
 	for(; i < solver->nVars; i++){
