@@ -1,10 +1,13 @@
 cc=gcc
-CFLAGS=-Wall -g -DDEBUG
+CFLAGS=-Wall -g 
 
 SOURCES=solver.c
 EXECUTABLES=$(SOURCES:%.c=%)
 
-all: $(EXECUTABLES)
+all: solver
+
+debug: CFLAGS += -DDEBUG
+debug: all
 
 clean:
 	rm -rf $(EXECUTABLES)
