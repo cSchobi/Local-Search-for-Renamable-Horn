@@ -63,6 +63,17 @@ void updateClause(Solver* solver, int nClause, int lit);
 void updateBreakCount(Solver* solver, int nClause, int lit);
 void updateOptimum(Solver* solver);
 int allClausesAreHorn(Solver* solver);
+void reset(Solver* solver);
+
+//Experiments
+void run_experiments(Solver* solver, int maxFlips);
+void solve(Solver* solver, int (* heuristic)(Solver* solver), int maxFlips);
+
+//Heuristics
+int getLitByBreak(Solver* solver);
+int getLitByBreakProb(Solver* solver);
+int getLitByCreate(Solver* solver);
+int getLitByCreateProb(Solver* solver);
 
 int main(int argc, char **argv){
 	Solver solver;
@@ -70,10 +81,13 @@ int main(int argc, char **argv){
 	init(&solver);
 	if(parse(&solver, argv[1]) == 1){
 		setupSolver(&solver);
+		run_experiments(&solver, 100);
+		/*
 		print(&solver);
 		printf("\n\n");
 		//solve_globally(&solver, 10);
 		solve_incrementally(&solver, 10);
+		*/
 	}else
 		printf("Error while parsing file\n");
 	free_solver(&solver);
@@ -424,6 +438,14 @@ int getMinBreakValue(Solver* solver){
 	return min;
 }
 
+int getMaxCreateValue(Solver* solver){
+	int max = 0, i;
+	for(i = 0; i < solver->nVars; i++){
+		if(solver->createCount[i] > max) max = solver->createCount[i];
+	}
+	return max;
+}
+
 
 void flipLiteral(Solver* solver, int nLit){
 	DEBUG_PRINT(("Flipping literal: %i\n", abs(nLit)));
@@ -597,4 +619,101 @@ int countHornClauses(Solver *solver){
 		nHorn += isHorn(solver, i);
 	}
 	return nHorn;
+}
+
+
+void run_experiments(Solver* solver, int maxFlips){
+	int i,n;
+	int (*heuristics[])(Solver* solver) = {getLitByBreak, getLitByBreakProb, getLitByCreate, getLitByCreateProb};
+	char* heuristic_names[] = {"break_count", "break_count_prob", "create_count", "create_count_prob"};
+	n = sizeof(heuristics) / sizeof(heuristics[0]);
+	for(i = 0; i < n; i++){
+		printf("%s ", heuristic_names[i]);
+		solve(solver, heuristics[i], maxFlips);
+		printf("\n");
+		reset(solver);
+	}
+}
+
+
+void solve(Solver* solver, int (* heuristic)(Solver* solver), int maxFlips){
+	int i, lit;
+	for(i = 0; i < maxFlips; i++){
+		if(allClausesAreHorn(solver)){
+	   	   break;
+		}
+		lit = (*heuristic)(solver);
+		updateSolver(solver, lit);
+		flipLiteral(solver, lit);
+		updateOptimum(solver);
+		printf("%i ", countHornClauses(solver));
+	}
+}
+
+
+void reset(Solver* solver){
+	int i;
+	for(i = 0; i < solver->nVars; i++){
+		solver->flipped[i] = 1;
+		solver->optFlip[i] = 1;
+	}
+	solver->optNHorn = 0;
+	setupSolver(solver);
+}
+
+int getLitByBreak(Solver* solver){
+	int min, i = 0, litIndex, nLiterals = 1;
+	min = getMinBreakValue(solver);
+	while( i < solver->nVars && solver->breakCount[i] != min) i++; // get first literal with minimum break count
+	litIndex = i;
+	for(; i < solver->nVars; i++){
+		if(solver->breakCount[i] == min && rand() < RAND_MAX/(nLiterals+1)){ // randomly keep current literal or replace with new one
+		   	litIndex = i;
+			nLiterals++;
+		}
+	}
+	return litIndex+1;
+}
+
+int getLitByBreakProb(Solver* solver){
+	int i, prob, randInt;
+	prob = solver->nClauses + 1 - solver->breakCount[0];
+	solver->cumProbs[0] = prob;
+	for(i = 1; i < solver->nVars; i++){
+		prob = solver->nClauses + 1 - solver->breakCount[i];
+		solver->cumProbs[i] = solver->cumProbs[i-1] + prob;
+	}
+	randInt = rand() % solver->cumProbs[solver->nVars-1];
+	i = 0;
+	while(solver->cumProbs[i] <= randInt) i++;
+	return i+1; // "i" is index of the literal "i+1"
+}
+
+int getLitByCreate(Solver* solver){
+	int max, i = 0, litIndex, nLiterals = 1;
+	max = getMaxCreateValue(solver);
+	while( i < solver->nVars && solver->createCount[i] != max) i++; // get first literal with minimum break count
+	litIndex = i;
+	for(; i < solver->nVars; i++){
+		if(solver->createCount[i] == max && rand() < RAND_MAX/(nLiterals+1)){ // randomly keep current literal or replace with new one
+		   	litIndex = i;
+			nLiterals++;
+		}
+	}
+	return litIndex+1;
+
+}
+
+int getLitByCreateProb(Solver* solver){
+	int i, prob, randInt;
+	prob = solver->createCount[0];
+	solver->cumProbs[0] = prob;
+	for(i = 1; i < solver->nVars; i++){
+		prob = solver->createCount[i];
+		solver->cumProbs[i] = solver->cumProbs[i-1] + prob;
+	}
+	randInt = rand() % solver->cumProbs[solver->nVars-1];
+	i = 0;
+	while(solver->cumProbs[i] <= randInt) i++;
+	return i+1; // "i" is index of the literal "i+1"
 }
