@@ -24,12 +24,11 @@ typedef struct solver {
 	int nClauses, nVars;
 	int *memory, *flipped;
 	int **clauses; // array with pointers into memory at the start and end of the clauses
-	int *breakCount;
-	int *posLiterals;
+	int *breakCount, *createCount; // cache for break and create counter for heuristics
+	int *posLiterals; // counter for positive literals in each clause
 	int *cumProbs; // buffer for cumulative probabilities in probSAT variant
-	int *optFlip;
-	int optNHorn;
-	int *createCount;
+	int *bufferVars; // buffer used in choosing literal
+	int *optFlip, optNHorn;
 	Literal *literals;
 } Solver;
 
@@ -159,6 +158,7 @@ void init(Solver* solver){
 	solver->optFlip = NULL;
 	solver->createCount = NULL;
 	solver->literals = NULL;
+	solver->bufferVars = NULL;
 	solver->nVars = 0;
 	solver->nClauses = 0;
 }
@@ -177,6 +177,7 @@ void allocate_memory(Solver* solver){
 	solver->optFlip = (int *) calloc(solver->nVars, sizeof(int));
 	solver->createCount = (int *) calloc(solver->nVars, sizeof(int));
 	solver->literals = (Literal *) calloc(solver->nVars, sizeof(Literal));
+	solver->bufferVars = (int *) calloc(solver->nVars, sizeof(int));
 
 	for(i = 0; i < solver->nVars; i++){
 		solver->flipped[i] = 1;
@@ -238,6 +239,7 @@ void free_solver(Solver* solver){
 	free(solver->cumProbs); solver->cumProbs = NULL;
 	free(solver->optFlip); solver->optFlip = NULL;
 	free(solver->createCount); solver->createCount = NULL;
+	free(solver->bufferVars); solver->bufferVars = NULL;
 }
 
 /*
@@ -297,12 +299,12 @@ void solve_incrementally(Solver* solver, int maxFlips){
 		DEBUG_PRINT(("Chosen clause: %d\n", clause));
 		lit = getLitInClause(solver, clause);
 		DEBUG_PRINT(("lit: %3d\n", lit));
-		printf("%d ", lit);
+		//printf("%d ", lit);
 		updateSolver(solver, lit);
 		flipLiteral(solver, lit);
 		updateOptimum(solver);
-		//printf("%d ", solver->nClauses - countHornClauses(solver));
-		//print_status(solver);
+		printf("%d, ", solver->nClauses - countHornClauses(solver));
+		print_status(solver);
 	}
 	DEBUG_PRINT(("Optimal number of horn clauses found: %i\n", solver->optNHorn));
 	DEBUG_PRINT_iARRAY(solver->optFlip, solver->nVars);
@@ -354,6 +356,10 @@ int getLitProb(Solver* solver){
 	
 }
 
+/*
+ * update solver such that counter for positive literals, break and create count
+ * are still up to date when lit is flipped
+ * */
 void updateSolver(Solver* solver, int lit){
 	int i;
 	for(i = 0; i < solver->literals[abs(lit)-1].nClauses; i++){
@@ -517,22 +523,23 @@ int countPosLit(Solver* solver, int nClause){
 int getLitInClause(Solver* solver, int nClause){
 	int* clause = solver->clauses[nClause];
 	int size = solver->clauses[nClause+1] - solver->clauses[nClause], i, min = solver->nClauses +1;
-	int lit, cnt, chosenLit;
+	int lit, cnt = 0;
 	for(i = 0; i < size; i++){
 		lit = clause[i];
-		//if(!isPosLit(solver, lit)) continue;
+		//if(!isPosLit(solver, lit)) continue; // should only negative literals be considered?
 		if(solver->breakCount[abs(lit)-1] < min){
-			cnt = 1;
 			min = solver->breakCount[abs(lit)-1];
-			chosenLit = lit;
-		}else if(solver->breakCount[abs(lit)-1] == min){ // literal with minimum break count found
-			if((float) rand() < (float) RAND_MAX/(cnt+1)){ // choose literal according to random uniform distribution
-				chosenLit = lit;
-			}
-			cnt++;	
+			cnt = 0;
+		}
+		if(solver->breakCount[abs(lit)-1] == min){
+			solver->bufferVars[cnt] = lit;
+			cnt++;
 		}
 	}
-	return chosenLit;
+	DEBUG_PRINT(("Candidate literals: "));
+	DEBUG_PRINT_iARRAY(solver->bufferVars, cnt);
+	assert(cnt > 0);
+	return solver->bufferVars[rand() % cnt];
 }
 
 /*
