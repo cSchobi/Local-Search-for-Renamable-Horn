@@ -1,5 +1,6 @@
 cc=gcc
-CFLAGS=-Wall -g 
+CFLAGS=-Wall -g
+LDLIBS=-lm
 
 SOURCES=solver.c
 EXECUTABLES=$(SOURCES:%.c=%)
