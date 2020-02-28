@@ -5,5 +5,5 @@ do
 	echo "processing $file"
 	filename=$(basename $file)
 	./solver $file > "./statistics/${filename%.*}.csv"
-	Rscript test.R ${filename%.*}
+	Rscript plotNHornTrend.R ${filename%.*}
 done
