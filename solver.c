@@ -98,13 +98,12 @@ void updateSolver(Solver* solver, int lit);
 // Literal choice
 int getLitWalkSAT(Solver* solver, int nClause);
 int getLitWalkSATSKC(Solver* solver, int nClause);
-/*
 int getLitProbSAT(Solver* solver, int nClause, double (*f)(double breakCount));
 int getLitProbSATexp(Solver* solver, int nClause);
 double probSATexp(double breakCount);
 double probSATpoly(double breakCount);
 int getLitProbSATpoly(Solver* solver, int nClause);
-*/
+
 //Experiments
 void run_experiments(Solver* solver, int maxFlips);
 
@@ -610,7 +609,7 @@ int getLitWalkSATSKC(Solver* solver, int nClause){
 		return clause[rand() % size];				
 }
 
-/*
+
 double probSATexp(double breakCount){
 	return pow(cbProbSATexp, -breakCount);
 }
@@ -629,15 +628,17 @@ int getLitProbSATpoly(Solver* solver, int nClause){
 
 int getLitProbSAT(Solver* solver, int nClause, double (*f)(double breakCount)){
 	int* clause = solver->clauses[nClause];
-	int size, i, lit;
+	int size, i, lit, breakCount;
 	double prob, r;
 	size = solver->clauses[nClause+1] - solver->clauses[nClause];
 	lit = clause[0];
-	prob = f(solver->breakCount[abs(lit)-1]);
+	breakCount = getBreakCount(solver, lit, 0, 0);
+	prob = f(breakCount);
 	solver->cumProbs[0] = prob;
 	for(i = 1; i < size; i++){
 		lit = clause[i];
-		prob = f(solver->breakCount[abs(lit)-1]);
+		breakCount = getBreakCount(solver, lit, 0, 0);
+		prob = f(breakCount);
 		solver->cumProbs[i] = solver->cumProbs[i-1] + prob;
 	}
 	r = ((double) rand() / (float) RAND_MAX) * solver->cumProbs[size-1];
@@ -648,4 +649,4 @@ int getLitProbSAT(Solver* solver, int nClause, double (*f)(double breakCount)){
 	DEBUG_PRINT(("random double: %f\n", r));
 	return clause[i];
 }
-*/
+
