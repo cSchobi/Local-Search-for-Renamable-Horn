@@ -31,20 +31,22 @@ const int print_status_flag = 0;
 const double epsilon = 1;
 const double cbProbSATpoly = 2.3;
 
+#define START_SIZE 16
+
 /*
  * ***Data structures***
  * */
 typedef struct literal{
-	int nClauses;
-	int *clauses;
-	int size;
+	int nPosClauses, nNegClauses;
+	int *posClauses, *negClauses;
+	int posSize, negSize;
 } Literal;
 
 typedef struct solver {
 	int nClauses, nVars;
 	int *memory, *flipped;
 	int **clauses; // array with pointers into memory at the start and end of the clauses
-	int *breakCount, *createCount; // cache for break and create counter for heuristics
+	//int *breakCount, *createCount; // cache for break and create counter for heuristics
 	int *posLiterals; // counter for positive literals in each clause
 	double *cumProbs; // buffer for cumulative probabilities in probSAT variant
 	int *bufferVars; // buffer used in choosing literal
@@ -77,7 +79,7 @@ int getNonHornClause(Solver* solver);
 int getLit(Solver* solver);
 int getLitProb(Solver* solver);
 int chooseLiteral(int* clause, int* breakValues, int size, int min);
-int getBreakValue(Solver* solver, int* posLiterals, int* posLiterals2);
+int getBreakCount(Solver* solver, int lit, int minBreak, int earlyBreak);
 int countPosLit(Solver* solver, int i);
 int isHorn(Solver* solver, int nClause);
 int isNonHorn(Solver* solver, int nClause);
@@ -85,7 +87,6 @@ int countHornClauses(Solver *solver);
 int isPosLit(Solver* solver, int lit);
 int isPosInClause(Solver* solver, int nClause, int lit);
 void flipLiteral(Solver* solver, int nLit);
-int getMinBreakCount(Solver* solver);
 int areAllClausesHorn(Solver* solver);
 
 // update solver
@@ -97,12 +98,13 @@ void updateSolver(Solver* solver, int lit);
 // Literal choice
 int getLitWalkSAT(Solver* solver, int nClause);
 int getLitWalkSATSKC(Solver* solver, int nClause);
+/*
 int getLitProbSAT(Solver* solver, int nClause, double (*f)(double breakCount));
 int getLitProbSATexp(Solver* solver, int nClause);
 double probSATexp(double breakCount);
 double probSATpoly(double breakCount);
 int getLitProbSATpoly(Solver* solver, int nClause);
-
+*/
 //Experiments
 void run_experiments(Solver* solver, int maxFlips);
 
@@ -117,7 +119,7 @@ int main(int argc, char **argv){
 	if(parse(&solver, argv[1]) == 1){
 		setupSolver(&solver);
 		//run_experiments(&solver, 100);
-		solve(&solver, getLitProbSATpoly, 500);
+		solve(&solver, getLitWalkSATSKC, 500);
 	}else
 		printf("Error while parsing file\n");
 	free_solver(&solver);
@@ -175,11 +177,9 @@ void init(Solver* solver){
 	solver->memory = NULL;
 	solver->clauses = NULL;
 	solver->flipped = NULL;
-	solver->breakCount = NULL;
 	solver->posLiterals = NULL;
 	solver->cumProbs = NULL;
 	solver->optFlip = NULL;
-	solver->createCount = NULL;
 	solver->literals = NULL;
 	solver->bufferVars = NULL;
 	solver->nVars = 0;
@@ -192,24 +192,22 @@ void allocate_memory(Solver* solver){
 	solver->clauses = (int **) calloc(solver->nClauses + 1, sizeof(int *)); // pointers into memory at start and end of each clause (last pointer points to end of last clause)
 	solver->clauses[0] = solver->memory;
 	solver->flipped = (int *) calloc(solver->nVars , sizeof(int)); // flip status of literal (-1: literal is flipped, 1: literal is not flipped)
-	// breakCount for each literal 
-	solver->breakCount = (int *) calloc(solver->nVars, sizeof(int));
 	// number of positive literals in each clause
 	solver->posLiterals = (int *) calloc(solver->nClauses, sizeof(int));
 	solver->cumProbs = (double *) calloc(solver->nVars, sizeof(double));
 	solver->optFlip = (int *) calloc(solver->nVars, sizeof(int));
-	solver->createCount = (int *) calloc(solver->nVars, sizeof(int));
 	solver->literals = (Literal *) calloc(solver->nVars, sizeof(Literal));
 	solver->bufferVars = (int *) calloc(solver->nVars, sizeof(int));
 
 	for(i = 0; i < solver->nVars; i++){
 		solver->flipped[i] = 1;
 		solver->optFlip[i] = 1;
-		solver->breakCount[i] = 0;
-		solver->createCount[i] = 0;
-		solver->literals[i].nClauses = 0;
-		solver->literals[i].size = 1;
-		solver->literals[i].clauses = calloc(1, sizeof(int));
+		solver->literals[i].nPosClauses = 0;
+		solver->literals[i].nNegClauses = 0;
+		solver->literals[i].posSize = START_SIZE;
+		solver->literals[i].negSize = START_SIZE;
+		solver->literals[i].posClauses = calloc(START_SIZE, sizeof(int));
+		solver->literals[i].negClauses = calloc(START_SIZE, sizeof(int));
 
 	}
 }
@@ -232,12 +230,21 @@ void add_clause(Solver* solver, int* buffer, int size, int nClause){
  * */
 void addClauseToLiteral(Solver* solver, int nLit, int clause){
 	Literal* lit = &solver->literals[abs(nLit)-1];
-	if(lit->size == lit->nClauses){
-		lit->size *= 2;
-		lit->clauses = realloc(lit->clauses, sizeof(int) * lit->size);
+	if(nLit > 0){
+		if(lit->posSize == lit->nPosClauses){
+			lit->posSize *= 2;
+			lit->posClauses = realloc(lit->posClauses , sizeof(int) * lit->posSize);
+		}
+		lit->posClauses[lit->nPosClauses] = clause;
+		lit->nPosClauses++;
+	}else{
+		if(lit->negSize == lit->nNegClauses){
+			lit->negSize *= 2;
+			lit->negClauses = realloc(lit->negClauses , sizeof(int) * lit->negSize);
+		}
+		lit->negClauses[lit->nNegClauses] = clause;
+		lit->nNegClauses++;
 	}
-	lit->clauses[lit->nClauses] = clause;
-	lit->nClauses++;
 }
 
 int skip_comment(FILE* file){
@@ -250,26 +257,25 @@ int skip_comment(FILE* file){
 void free_solver(Solver* solver){
 	int i;
 	for(i = 0; i < solver->nVars; i++){
-		free(solver->literals[i].clauses);
+		free(solver->literals[i].posClauses);
+		free(solver->literals[i].negClauses);
 	}
 	free(solver->literals); solver->literals = NULL;
 	free(solver->clauses); solver->clauses = NULL;
 	free(solver->memory); solver->memory = NULL;
 	solver->nClauses = solver->nVars = 0;
 	free(solver->flipped); solver->flipped = NULL;
-	free(solver->breakCount); solver->breakCount = NULL;
 	free(solver->posLiterals); solver->posLiterals = NULL;
 	free(solver->cumProbs); solver->cumProbs = NULL;
 	free(solver->optFlip); solver->optFlip = NULL;
-	free(solver->createCount); solver->createCount = NULL;
 	free(solver->bufferVars); solver->bufferVars = NULL;
 }
 
 /*
- * initialize breakCount and number of positive Literals
+ * initialize number of positive Literals
  * */
 void setupSolver(Solver* solver){
-	int i,j, size, lit;
+	int i,j, size;
 	int* clause;
 	solver->optNHorn = 0;
 	for(i = 0; i < solver->nClauses; i++){
@@ -281,16 +287,6 @@ void setupSolver(Solver* solver){
 		}	
 		solver->optNHorn += solver->posLiterals[i] < 2 ? 1 : 0;
 	}	
-	for(i = 0; i < solver->nClauses; i++){
-		clause = solver->clauses[i];
-		size = solver->clauses[i+1] - solver->clauses[i];
-		for(j = 0; j < size; j++){
-			lit = clause[j];
-			solver->breakCount[abs(lit)-1] += solver->posLiterals[i] == 1 && lit < 0;
-			solver->createCount[abs(lit)-1] += solver->posLiterals[i] == 2 && lit  > 0;
-
-		}
-	}
 }
 
 void print(Solver* solver){
@@ -341,100 +337,23 @@ int areAllClausesHorn(Solver* solver){
 }
 
 /*
- * get a random literal with minimum break count
- * */
-int getLit(Solver* solver){
-	int min, i = 0, litIndex, nLiterals = 1;
-	min = getMinBreakCount(solver);
-	while( i < solver->nVars && solver->breakCount[i] != min) i++; // get first literal with minimum break count
-	litIndex = i;
-	for(; i < solver->nVars; i++){
-		if(solver->breakCount[i] == min && rand() < RAND_MAX/(nLiterals+1)){ // randomly keep current literal or replace with new one
-		   	litIndex = i;
-			nLiterals++;
-		}
-	}
-	return litIndex+1;
-}
-
-/*
  * update solver such that counter for positive literals, break and create count
  * are still up to date when lit is flipped
  * */
-void updateSolver(Solver* solver, int lit){
+void updateSolver(Solver* solver, int nLit){
 	int i;
-	for(i = 0; i < solver->literals[abs(lit)-1].nClauses; i++){
-		updateClause(solver, solver->literals[abs(lit)-1].clauses[i], lit);
+	Literal* lit = &solver->literals[abs(nLit)-1];
+	for(i = 0; i < lit->nPosClauses; i++){
+		if(solver->flipped[abs(nLit)-1] == 1)
+			solver->posLiterals[lit->posClauses[i]]--;
+		else
+			solver->posLiterals[lit->posClauses[i]]++;
 	}
-}
-
-/*
- * update number of positive literals and breakcount for all variables in clause
- * if necessary
- * */
-void updateClause(Solver* solver, int nClause, int lit){
-	updateBreakCreateCount(solver, nClause, lit);
-	if(isPosInClause(solver, nClause, lit)) 
-		solver->posLiterals[nClause]--;
-	else 
-		solver->posLiterals[nClause]++;
-}
-
-void updateBreakCreateCount(Solver* solver, int nClause, int flipLit){
-	int i, nPosLiterals, size, lit;
-	int* clause;
-	nPosLiterals = solver->posLiterals[nClause];
-	clause = solver->clauses[nClause];
-	size = solver->clauses[nClause+1] - solver->clauses[nClause];
-	if(isPosInClause(solver, nClause, flipLit)){ // flipLit is changed from positive to negative
-		if(nPosLiterals != 1 && nPosLiterals != 2 && nPosLiterals != 3)
-			return;
-		for(i = 0; i < size; i++){ 
-			lit = clause[i];
-			if(abs(lit) != abs(flipLit)){
-				if(!isPosLit(solver, lit)){
-					if(nPosLiterals == 1) // clause cannot be broken by one flip anymore because there will be 0 positive literals in the clause
-						solver->breakCount[abs(lit)-1] -= 1;
-					else if(nPosLiterals == 2)// clause becomes horn because number of positive literals decreases from 2 to 1
-						solver->breakCount[abs(lit)-1] += 1;
-				}else{
-					if(nPosLiterals == 2) // clause becomes horn -> literal i cannot make clause horn
-						solver->createCount[abs(lit)-1] -= 1;
-					else if(nPosLiterals == 3) // clause stays nonhorn but can become horn with one flip of literal 1
-						solver->createCount[abs(lit)-1] += 1;
-				}
-			}
-			else{
-				if(nPosLiterals == 2){ // number of literals decreases from 2 to 1 and lit will be negated in the clause -> clause will be able to be broken
-					solver->breakCount[abs(lit)-1] += 1;
-					solver->createCount[abs(lit)-1] -= 1;
-				}
-			}
-		}
-	}else{ // lit is changed from negated to positive
-		if(nPosLiterals != 0 && nPosLiterals != 1 && nPosLiterals != 2)
-			return;
-		for(i = 0; i < size; i++){
-			lit = clause[i];
-			if(abs(lit) != abs(flipLit)){
-				if(!isPosLit(solver, lit)){
-					if(nPosLiterals == 0) // number of positive literals increases from 0 to 1 -> clause can be broken
-						solver->breakCount[abs(lit)-1] += 1;
-					else if(nPosLiterals == 1) // number of positive literals increases from 1 to 2 -> clause cannot be broken anymore
-						solver->breakCount[abs(lit)-1] -= 1;
-				}else{
-					if(nPosLiterals == 1) // there will be 2 pos. literals in clause -> by flipping literal i this clause will become horn again
-						solver->createCount[abs(lit)-1] += 1;
-					else if(nPosLiterals == 2) // there will be 3 pos. literals in clause -> flipping literal i cannot make this clause horn anymore
-						solver->createCount[abs(lit)-1] -= 1;
-				}
-			}else{ // the flip broke the clause -> decrease breakCount
-				if(nPosLiterals == 1){
-					solver->breakCount[abs(lit)-1] -= 1;
-					solver->createCount[abs(lit)-1] += 1;
-				}
-			}
-		}
+	for(i = 0; i < lit->nNegClauses; i++){
+		if(solver->flipped[abs(nLit)-1] == 1)
+			solver->posLiterals[lit->negClauses[i]]++;
+		else
+			solver->posLiterals[lit->negClauses[i]]--;
 	}
 }
 
@@ -449,18 +368,6 @@ void updateOptimum(Solver* solver){
 }
 
 /*
- * returns minimal break value of all variables
- * */
-int getMinBreakCount(Solver* solver){
-	int min = solver->nClauses, i;
-	for(i = 0; i < solver->nVars; i++){
-		if(solver->breakCount[i] < min) {
-			min = solver->breakCount[i];
-		}
-	}
-	return min;
-}
-
 int getMaxCreateValue(Solver* solver){
 	int max = 0, i;
 	for(i = 0; i < solver->nVars; i++){
@@ -468,6 +375,7 @@ int getMaxCreateValue(Solver* solver){
 	}
 	return max;
 }
+*/
 
 
 void flipLiteral(Solver* solver, int nLit){
@@ -515,40 +423,6 @@ int countPosLit(Solver* solver, int nClause){
 	}
 	return posLit;
 }
-
-/*
- * Returns a literal in the given clause that should be flipped
- * candidate literals are those with the lowest break count
- * if multiple of those exist a random one is chosen
- * */
-int getLitWalkSAT(Solver* solver, int nClause){
-	int* clause = solver->clauses[nClause];
-	int size = solver->clauses[nClause+1] - solver->clauses[nClause], i, min = solver->nClauses +1;
-	int lit, cnt = 0;
-	for(i = 0; i < size; i++){
-		lit = clause[i];
-		if(skipNegLit && !isPosLit(solver, lit)) continue; // should only negative literals be considered?
-		if(solver->breakCount[abs(lit)-1] < min){
-			min = solver->breakCount[abs(lit)-1];
-			cnt = 0;
-		}
-		if(solver->breakCount[abs(lit)-1] == min){
-			solver->bufferVars[cnt] = lit;
-			cnt++;
-		}
-	}
-	DEBUG_PRINT(("Candidate literals: "));
-	DEBUG_PRINT_iARRAY(solver->bufferVars, cnt);
-	assert(cnt > 0);
-	return solver->bufferVars[rand() % cnt];
-}
-
-/*
-int isPosLit(Solver* solver, int* clause, int i){
-	return clause[i] * solver->flipped[abs(clause[i])-1] > 0;
-
-}
-*/
 
 /*
  * return true if given literal is positive
@@ -622,11 +496,11 @@ void print_status(Solver* solver){
 	for(i = 0; i < solver->nVars; i++)
 		printf("%3d ", solver->flipped[i]);
 	printf("| flip Status\n");
-	for(i = 0; i < solver->nVars; i++)
-		printf("%3d ", solver->breakCount[i]);
+	for(i = 1; i <= solver->nVars; i++)
+		printf("%3d ", getBreakCount(solver, i, 0, 0));
 	printf("| break count\n");
-	for(i = 0; i < solver->nVars; i++)
-		printf("%3d ", solver->createCount[i]);
+//	for(i = 0; i < solver->nVars; i++)
+//		printf("%3d ", solver->createCount[i]);
 	printf("| create count\n");
 
 }
@@ -664,19 +538,65 @@ void reset(Solver* solver){
 	setupSolver(solver);
 }
 
+/*
+ * Returns a literal in the given clause that should be flipped
+ * candidate literals are those with the lowest break count
+ * if multiple of those exist a random one is chosen
+ * */
+int getLitWalkSAT(Solver* solver, int nClause){
+	int* clause = solver->clauses[nClause];
+	int size = solver->clauses[nClause+1] - solver->clauses[nClause], i, min = solver->nClauses +1;
+	int lit, cnt = 0, breakCount;
+	for(i = 0; i < size; i++){
+		lit = clause[i];
+		if(skipNegLit && !isPosLit(solver, lit)) continue; // should only negative literals be considered?
+		breakCount = getBreakCount(solver, lit, min, 1);
+		if(breakCount < min){
+			min = breakCount;
+			cnt = 0;
+		}
+		if(breakCount == min){
+			solver->bufferVars[cnt] = lit;
+			cnt++;
+		}
+	}
+	DEBUG_PRINT(("Candidate literals: "));
+	DEBUG_PRINT_iARRAY(solver->bufferVars, cnt);
+	assert(cnt > 0);
+	return solver->bufferVars[rand() % cnt];
+}
+
+int getBreakCount(Solver* solver, int nLit, int minBreak, int earlyBreak){
+	int breakCount = 0, i;
+	Literal* lit = &solver->literals[abs(nLit)-1];
+	if(solver->flipped[abs(nLit)-1] == 1){
+		for(i = 0; i < lit->nNegClauses; i++){
+			if(solver->posLiterals[lit->negClauses[i]] == 1) breakCount++;
+			if(earlyBreak && breakCount > minBreak) return breakCount;
+		}
+	}else{
+		for(i = 0; i < lit->nPosClauses; i++){
+			if(solver->posLiterals[lit->posClauses[i]] == 1) breakCount++;
+			if(earlyBreak && breakCount > minBreak) return breakCount;
+		}
+	}
+	return breakCount;
+}
+
 int getLitWalkSATSKC(Solver* solver, int nClause){
 	int* clause = solver->clauses[nClause];
-	int size, i, min, lit, cnt = 0;
+	int size, i, min, lit, cnt = 0, breakCount;
 	min = solver->nClauses + 1;
 	size = solver->clauses[nClause+1] - solver->clauses[nClause];
 	for(i = 0; i < size; i++){
 		lit = clause[i];
 		if(skipNegLit && !isPosLit(solver, lit)) continue; // should only negative literals be considered?
-		if(solver->breakCount[abs(lit)-1] < min){
-			min = solver->breakCount[abs(lit)-1];
+		breakCount = getBreakCount(solver, lit, min, 1);
+		if(breakCount < min){
+			min = breakCount;
 			cnt = 0;
 		}
-		if(solver->breakCount[abs(lit)-1] == min){
+		if(breakCount == min){
 			solver->bufferVars[cnt] = lit;
 			cnt++;
 		}
@@ -690,6 +610,7 @@ int getLitWalkSATSKC(Solver* solver, int nClause){
 		return clause[rand() % size];				
 }
 
+/*
 double probSATexp(double breakCount){
 	return pow(cbProbSATexp, -breakCount);
 }
@@ -727,3 +648,4 @@ int getLitProbSAT(Solver* solver, int nClause, double (*f)(double breakCount)){
 	DEBUG_PRINT(("random double: %f\n", r));
 	return clause[i];
 }
+*/
