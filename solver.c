@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <math.h>
+#include <time.h>
 
 #ifdef DEBUG
 #define DEBUG_PRINT(x) printf x
@@ -46,7 +47,6 @@ typedef struct solver {
 	int nClauses, nVars;
 	int *memory, *flipped;
 	int **clauses; // array with pointers into memory at the start and end of the clauses
-	//int *breakCount, *createCount; // cache for break and create counter for heuristics
 	int *posLiterals; // counter for positive literals in each clause
 	double *cumProbs; // buffer for cumulative probabilities in probSAT variant
 	int *bufferVars; // buffer used in choosing literal
@@ -72,13 +72,11 @@ void reset(Solver* solver);
 //Printing
 void print(Solver* solver);
 void print_status(Solver* solver);
+void print_remaining_clauses(Solver* solver, int i);
 
 // Search
 void solve(Solver* solver, int (* getLiteral)(Solver* solver, int nClause), int maxFlips);
 int getNonHornClause(Solver* solver);
-int getLit(Solver* solver);
-int getLitProb(Solver* solver);
-int chooseLiteral(int* clause, int* breakValues, int size, int min);
 int getBreakCount(Solver* solver, int lit, int minBreak, int earlyBreak);
 int countPosLit(Solver* solver, int i);
 int isHorn(Solver* solver, int nClause);
@@ -90,8 +88,6 @@ void flipLiteral(Solver* solver, int nLit);
 int areAllClausesHorn(Solver* solver);
 
 // update solver
-void updateClause(Solver* solver, int nClause, int lit);
-void updateBreakCreateCount(Solver* solver, int nClause, int lit);
 void updateOptimum(Solver* solver);
 void updateSolver(Solver* solver, int lit);
 
@@ -114,11 +110,12 @@ void run_experiments(Solver* solver, int maxFlips);
 int main(int argc, char **argv){
 	Solver solver;
 	if(argc != 2){ printf("Usage: %s fileName\n", argv[0]); exit(0); }
+	srand(time(NULL));
 	init(&solver);
 	if(parse(&solver, argv[1]) == 1){
 		setupSolver(&solver);
-		//run_experiments(&solver, 100);
-		solve(&solver, getLitWalkSATSKC, 500);
+		run_experiments(&solver, 200);
+		//solve(&solver, getLitWalkSATSKC, 500);
 	}else
 		printf("Error while parsing file\n");
 	free_solver(&solver);
@@ -289,42 +286,49 @@ void setupSolver(Solver* solver){
 }
 
 void print(Solver* solver){
-	int nVar, nClause, size;
+	int size, i, j;
 	int* clause;
-	
+	if(!print_status_flag) return;	
 	printf("p cnf %i %i\n", solver->nVars, solver->nClauses);
-	for(nClause = 0; nClause < solver->nClauses; nClause++){
-		clause = solver->clauses[nClause];
-		size = solver->clauses[nClause+1] - solver->clauses[nClause];
-		for(nVar = 0; nVar < size; nVar++){
-			printf("%i ", clause[nVar]);
+	for(i = 0; i < solver->nClauses; i++){
+		printf("%3d ", i);
+		clause = solver->clauses[i];
+		size = solver->clauses[i+1] - solver->clauses[i];
+		for(j = 0; j < size; j++){
+			printf("%3d ", clause[j]);
 		}
-		printf("\n");
+		printf("|%2d\n", solver->posLiterals[i]);
 	}
-
 }
 
 void solve(Solver* solver, int (* getLiteral)(Solver* solver, int nClause), int maxFlips){
 	int i, lit, clause;
+	print(solver);
 	print_status(solver);
 	for(i = 0; i < maxFlips; i++){
+		print_remaining_clauses(solver, i);
 		DEBUG_PRINT(("Trie: %i\n", i));
 		clause = getNonHornClause(solver);
 		if(clause == -1){
 		   DEBUG_PRINT(("Done\n"));
 	   	   break;
 		}
-		DEBUG_PRINT(("Chosen clause: %d\n", clause));
+		DEBUG_PRINT(("chosen clause: %d\n", clause));
 		lit = (*getLiteral)(solver, clause);
-		DEBUG_PRINT(("lit: %3d\n", lit));
+		DEBUG_PRINT(("chosen lit: %3d\n", lit));
 		updateSolver(solver, lit);
-		printf("%d, ", solver->nClauses - countHornClauses(solver));
 		flipLiteral(solver, lit);
 		updateOptimum(solver);
 		print_status(solver);
 	}
+	printf(",%d", solver->nClauses - solver->optNHorn); // print optimum at the end
 	DEBUG_PRINT(("Optimal number of horn clauses found: %i\n", solver->optNHorn));
 	DEBUG_PRINT_iARRAY(solver->optFlip, solver->nVars);
+}
+
+void print_remaining_clauses(Solver* solver, int i){
+		if(i != 0) printf(",");
+		printf("%d", solver->nClauses - countHornClauses(solver));
 }
 
 int areAllClausesHorn(Solver* solver){
@@ -459,33 +463,10 @@ int getBreakValue(Solver* solver, int* posLiterals, int* posLiterals2){
 	return breakValue;
 }
 
-/*
- * choose a random literal among those with the minimum break value
- * */
-int chooseLiteral(int* clause, int* breakValues, int size, int min){
-	int i = 0, litIndex;
-	while(i < size && breakValues[i] != min) i++; // get first literal candidate
-	litIndex = i;
-	for(; i < size; i++){ // choose one random literal candidate
-		if(breakValues[i] == min)
-			if(rand() <  RAND_MAX / 2) litIndex = i;
-	}
-	return clause[litIndex]; 
-}
-
 void print_status(Solver* solver){
 	if(!print_status_flag) return;
-	int i,j, size;
-	int *clause;
+	int i;
 	printf("Horn clauses: %i\n", countHornClauses(solver));
-	for(i = 0; i < solver->nClauses; i++){
-		clause = solver->clauses[i];
-		size = solver->clauses[i+1] - solver->clauses[i];
-		for(j = 0; j < size; j++){
-			printf("%3d ", clause[j] * solver->flipped[abs(clause[j])-1]);
-		}
-		printf("|%2d\n", solver->posLiterals[i]);
-	}
 	for(i = 0; i < solver->nVars; i++)
 		printf("--");
 	printf("\n");
@@ -498,10 +479,6 @@ void print_status(Solver* solver){
 	for(i = 1; i <= solver->nVars; i++)
 		printf("%3d ", getBreakCount(solver, i, 0, 0));
 	printf("| break count\n");
-//	for(i = 0; i < solver->nVars; i++)
-//		printf("%3d ", solver->createCount[i]);
-	printf("| create count\n");
-
 }
 
 int countHornClauses(Solver *solver){
@@ -512,20 +489,18 @@ int countHornClauses(Solver *solver){
 	return nHorn;
 }
 
-/*
 void run_experiments(Solver* solver, int maxFlips){
 	int i,n;
-	int (*heuristics[])(Solver* solver, int nClause) = {getLitByBreak, getLitByBreakProb, getLitByCreate, getLitByCreateProb};
-	char* heuristic_names[] = {"break_count", "break_count_prob", "create_count", "create_count_prob"};
+	int (*heuristics[])(Solver* solver, int nClause) = {getLitWalkSATSKC, getLitProbSATexp, getLitProbSATpoly};
+	char* heuristic_names[] = {"WalkSATSKC", "probSATexp", "probSATpoly"};
 	n = sizeof(heuristics) / sizeof(heuristics[0]);
 	for(i = 0; i < n; i++){
-		printf("%s ", heuristic_names[i]);
+		printf("%s,", heuristic_names[i]);
 		solve(solver, heuristics[i], maxFlips);
 		printf("\n");
 		reset(solver);
 	}
 }
-*/
 
 
 void reset(Solver* solver){
@@ -606,7 +581,10 @@ int getLitWalkSATSKC(Solver* solver, int nClause){
 	if(min == 0 || ((float) rand() / (float) RAND_MAX > pWalkSATSKC))
 		return solver->bufferVars[rand() % cnt];
 	else // if minimum is not zero take a random step with propability pWalkSATSKC
+	{
+		DEBUG_PRINT(("Taking random step\n"));
 		return clause[rand() % size];				
+	}
 }
 
 
@@ -649,4 +627,3 @@ int getLitProbSAT(Solver* solver, int nClause, double (*f)(double breakCount)){
 	DEBUG_PRINT(("random double: %f\n", r));
 	return clause[i];
 }
-
