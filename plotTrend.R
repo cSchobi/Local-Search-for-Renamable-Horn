@@ -1,7 +1,6 @@
 #!/usr/bin/env Rscript
 args = commandArgs(trailingOnly = TRUE)
 file = args[1]
-file = "quinn"
 #load .csv file
 file.path("statistics", paste(file, ".csv", sep=""))
 experiments = read.csv(file.path("statistics", paste(file, ".csv", sep="")), 

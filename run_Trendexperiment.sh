@@ -4,6 +4,6 @@ for file in ./examples/*.cnf
 do
 	echo "processing $file"
 	filename=$(basename $file)
-	./solver $file > "./statistics/${filename%.*}.csv"
-	Rscript plotNHornTrend.R ${filename%.*}
+	./solver $file 1 > "./statistics/${filename%.*}.csv"
+	Rscript plotTrend.R ${filename%.*}
 done
