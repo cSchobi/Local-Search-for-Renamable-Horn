@@ -33,7 +33,7 @@ const int skipNegLit = 0;
 int nPoints = 10;
 int print_remaining_clauses_flag = 0;
 int print_optimum_flag = 0;
-const int print_status_flag = 0;
+int print_status_flag = 0;
 double pWalkSATSKC = 0.567;
 double cbProbSATexp = 2.5;
 double cbProbSATpoly = 2.3;
@@ -132,6 +132,8 @@ int main(int argc, char **argv){
 	if(parse(&solver, argv[1]) == 1){
 		setupSolver(&solver);
 		if(strcmp("0", mode) == 0){
+			print_status_flag=1;
+			print_remaining_clauses_flag=1;
 			solve(&solver, getLitWalkSATSKC, 500);
 		}else if(strcmp("1", mode) == 0){
 			trendExperiment(&solver, MAX_FLIPS);
