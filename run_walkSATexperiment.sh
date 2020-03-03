@@ -8,6 +8,6 @@ do
 	echo "processing $file"
 	filename=$(basename $file)
 	printf "${filename%.*}" >> "./statistics/$FILE.csv"
-	./solver $file 2 >> "./statistics/$FILE.csv"
+	./solver $file -mode 2 >> "./statistics/$FILE.csv"
 done
 Rscript plotWalkSAT.R $FILE

@@ -29,7 +29,7 @@
  * Parameters
  * */
 
-const int skipNegLit = 0;
+int skipNegLit = 0;
 int nPoints = 10;
 int print_remaining_clauses_flag = 0;
 int print_optimum_flag = 0;
@@ -38,6 +38,7 @@ double pWalkSATSKC = 0.567;
 double cbProbSATexp = 2.5;
 double cbProbSATpoly = 2.3;
 const double epsilon = 1;
+int mode = -1; 
 
 #define MAX_FLIPS 200
 #define START_SIZE 16 // start size of occurrence lists of literals
@@ -81,11 +82,13 @@ void reset(Solver* solver);
 void print(Solver* solver);
 void print_status(Solver* solver);
 void print_remaining_clauses(Solver* solver, int i);
+void print_usage();
 
 // Search
 void solve(Solver* solver, int (* getLiteral)(Solver* solver, int nClause), int maxFlips);
 int getNonHornClause(Solver* solver);
-int getBreakCount(Solver* solver, int lit, int minBreak, int earlyBreak);
+int getBreakCount(Solver* solver, int nLit, int minBreak, int earlyBreak);
+int getMakeCount(Solver* solver, int nLit);
 int countPosLit(Solver* solver, int i);
 int isHorn(Solver* solver, int nClause);
 int isNonHorn(Solver* solver, int nClause);
@@ -103,57 +106,84 @@ void updateSolver(Solver* solver, int lit);
 int getLitWalkSATSKC(Solver* solver, int nClause);
 int getLitProbSAT(Solver* solver, int nClause, double (*f)(double breakCount));
 int getLitProbSATexp(Solver* solver, int nClause);
+int getLitProbSATpoly(Solver* solver, int nClause);
 double probSATexp(double breakCount);
 double probSATpoly(double breakCount);
-int getLitProbSATpoly(Solver* solver, int nClause);
 
 //Experiments
 void trendExperiment(Solver* solver, int maxFlips);
+void trendSkipExperiment(Solver* solver, int maxFlips);
 void walkSATExperiment(Solver* solver, int maxFlips, int nPoints);
 void probSATexpExperiment(Solver* solver, int maxFlips, int nPoints);
 void probSATpolyExperiment(Solver* solver, int maxFlips, int nPoints);
-
+void parse_parameters(int argc, char *argv[]);
 
 /* 
  * ************************************************************************
  * */
 int main(int argc, char **argv){
 	Solver solver;
-	char *mode;
-	if(argc != 3){ 
-		printf("Usage: %s fileName Mode\n", argv[0]);
-	   	printf("Modes: 0 -> testing, 1 -> trend experiment, 2 -> walkSATexperiment, ");
-		printf("3->probSatexponential experiment, 4->probSATpoly experiment\n");	
-		exit(0); 
-	}
 	srand(time(NULL));
 	init(&solver);
-	mode = argv[2];
+	parse_parameters(argc, argv);
 	if(parse(&solver, argv[1]) == 1){
 		setupSolver(&solver);
-		if(strcmp("0", mode) == 0){
+		DEBUG_PRINT(("skip neg literal: %d\n", skipNegLit));
+		if(mode == 0){
 			print_status_flag=1;
-			print_remaining_clauses_flag=1;
-			solve(&solver, getLitWalkSATSKC, 500);
-		}else if(strcmp("1", mode) == 0){
+			print_remaining_clauses_flag=0;
+			solve(&solver, getLitWalkSATSKC, 20);
+		}else if(mode == 1){
 			trendExperiment(&solver, MAX_FLIPS);
-		}else if(strcmp("2", mode) == 0){
+		}else if(mode == 2){
 			walkSATExperiment(&solver, MAX_FLIPS, nPoints);
-		}else if(strcmp("3", mode) == 0){
+		}else if(mode == 3){
 			nPoints = 20;
 			probSATexpExperiment(&solver, MAX_FLIPS, nPoints);
-		}else if(strcmp("4", mode) == 0){
+		}else if(mode == 4){
 			nPoints = 20;
 			probSATpolyExperiment(&solver, MAX_FLIPS, nPoints);
+		}else if(mode == 5){
+			trendSkipExperiment(&solver, MAX_FLIPS);
 		}else{
-			printf("Usage: %s fileName Mode\n", argv[0]);
-			printf("Modes: 0 -> testing, 1 -> trend experiment, 2 -> walkSATexperiment, ");
-			printf("3->probSatexponential experiment, 4->probSATpoly experiment\n");	
+			printf("invalid mode\n");
 			exit(0); 
 		}
 	}else
 		printf("Error while parsing file\n");
 	free_solver(&solver);
+}
+
+void parse_parameters(int argc, char *argv[]){
+	int i;
+	for(i = 2; i < argc; i++){ // first argument is filename
+		if(strcmp("-skip", argv[i]) == 0){
+			i++;
+			if(strcmp("0", argv[i]) == 0){
+				skipNegLit = 0;
+			}else if(strcmp("1", argv[i]) == 0){
+				skipNegLit = 1;
+			}else{
+				printf("Illegal argument for -skip\n");
+				print_usage();
+				exit(0);
+			}
+		}else if(strcmp("-mode", argv[i]) == 0){
+			i++;
+			mode = atoi(argv[i]);
+		}else if(strcmp("-h", argv[i]) == 0){
+			exit(0); 
+		}
+	}
+}
+
+void print_usage(){
+	printf("Usage: fileName -mode x [optional parameters]\n");
+	printf("Parameters:\n");
+	printf("-mode = 0 testing, 1 trend experiment, 2 walkSATexperiment, \n");
+	printf("\t3 probSatexponential experiment, 4  probSATpoly experiment\n");	
+	printf("Optional parameters:\n");
+	printf("-skip = 0 do not skip negative literals for literal selection, 1 skip negative literals\n");
 }
 
 int parse(Solver* solver, char *fileName){
@@ -330,7 +360,7 @@ void print(Solver* solver){
 		clause = solver->clauses[i];
 		size = solver->clauses[i+1] - solver->clauses[i];
 		for(j = 0; j < size; j++){
-			printf("%3d ", clause[j]);
+			printf("%3d ", clause[j] * solver->flipped[abs(clause[j])-1]);
 		}
 		printf("|%2d\n", solver->posLiterals[i]);
 	}
@@ -338,7 +368,6 @@ void print(Solver* solver){
 
 void solve(Solver* solver, int (* getLiteral)(Solver* solver, int nClause), int maxFlips){
 	int i, lit, clause;
-	print(solver);
 	print_status(solver);
 	for(i = 0; i < maxFlips; i++){
 		print_remaining_clauses(solver, i);
@@ -350,7 +379,6 @@ void solve(Solver* solver, int (* getLiteral)(Solver* solver, int nClause), int 
 		}
 		DEBUG_PRINT(("chosen clause: %d\n", clause));
 		lit = (*getLiteral)(solver, clause);
-		DEBUG_PRINT(("chosen lit: %3d\n", lit));
 		updateSolver(solver, lit);
 		flipLiteral(solver, lit);
 		updateOptimum(solver);
@@ -502,6 +530,7 @@ int getBreakValue(Solver* solver, int* posLiterals, int* posLiterals2){
 void print_status(Solver* solver){
 	if(!print_status_flag) return;
 	int i;
+	print(solver);
 	printf("Horn clauses: %i\n", countHornClauses(solver));
 	for(i = 0; i < solver->nVars; i++)
 		printf("--");
@@ -515,6 +544,9 @@ void print_status(Solver* solver){
 	for(i = 1; i <= solver->nVars; i++)
 		printf("%3d ", getBreakCount(solver, i, 0, 0));
 	printf("| break count\n");
+	for(i = 1; i <= solver->nVars; i++)
+		printf("%3d ", getMakeCount(solver, i));
+	printf("| make count\n");
 }
 
 int countHornClauses(Solver *solver){
@@ -537,6 +569,24 @@ void trendExperiment(Solver* solver, int maxFlips){
 		solve(solver, heuristics[i], maxFlips);
 		printf("\n");
 		reset(solver);
+	}
+}
+
+void trendSkipExperiment(Solver* solver, int maxFlips){
+	int i,skip,n;
+	int (*heuristics[])(Solver* solver, int nClause) = {getLitWalkSATSKC, getLitProbSATexp, getLitProbSATpoly};
+	char* heuristic_names[] = {"WalkSATSKC", "probSATexp", "probSATpoly"};
+	n = sizeof(heuristics) / sizeof(heuristics[0]);
+	print_remaining_clauses_flag = 1;
+	print_optimum_flag = 1;
+	for(i = 0; i < n; i++){
+		for(skip = 0; skip <= 1; skip++){
+			printf("%s[skip=%d],", heuristic_names[i], skip);
+			skipNegLit = skip;
+			solve(solver, heuristics[i], maxFlips);
+			printf("\n");
+			reset(solver);
+		}
 	}
 }
 
@@ -619,6 +669,25 @@ int getBreakCount(Solver* solver, int nLit, int minBreak, int earlyBreak){
 	return breakCount;
 }
 
+/*
+ * as an alternatie to break count, the number of non Horn clauses
+ * that become horn might be a good heuristic
+ * */
+int getMakeCount(Solver* solver, int nLit){
+	int makeCount = 0, i;
+	Literal* lit = &solver->literals[abs(nLit)-1];
+	if(solver->flipped[abs(nLit)-1] == -1){
+		for(i = 0; i < lit->nNegClauses; i++){
+			if(solver->posLiterals[lit->negClauses[i]] == 2) makeCount++;
+		}
+	}else{
+		for(i = 0; i < lit->nPosClauses; i++){
+			if(solver->posLiterals[lit->posClauses[i]] == 2) makeCount++;
+		}
+	}
+	return makeCount;
+}
+
 int getLitWalkSATSKC(Solver* solver, int nClause){
 	int* clause = solver->clauses[nClause];
 	int size, i, min, lit, cnt = 0, breakCount;
@@ -648,7 +717,6 @@ int getLitWalkSATSKC(Solver* solver, int nClause){
 		return clause[rand() % size];				
 	}
 }
-
 
 double probSATexp(double breakCount){
 	return pow(cbProbSATexp, -breakCount);

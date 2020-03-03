@@ -14,7 +14,7 @@ for ((i=0; i < ${#FILES[@]};++i));do
 		echo "processing $inputfile"
 		inputfilename=$(basename $inputfile)
 		printf "${inputfilename%.*}" >> "./statistics/$FILE.csv"
-		./solver $inputfile $MODE >> "./statistics/$FILE.csv"
+		./solver $inputfile -mode $MODE >> "./statistics/$FILE.csv"
 	done
 	Rscript plotProbSAT.R $FILE
 done
