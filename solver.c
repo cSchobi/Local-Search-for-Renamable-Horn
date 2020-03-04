@@ -35,14 +35,16 @@ int print_remaining_clauses_flag = 0;
 int print_optimum_flag = 0;
 int print_status_flag = 0;
 double pWalkSATSKC = 0.1; //0.567;
-double cbProbSATexp = 10; //2.5;
-double cbProbSATpoly = 10; //2.3;
+double cbProbSATexp = 4.0; //2.5;
+double cmProbSATexp = 2.0;
+double cbProbSATpoly = 4; //2.3;
+double cmProbSATpoly = 1;
 const double epsilon = 1;
 int mode = -1; 
 
 #define MAX_FLIPS 200
 #define START_SIZE 16 // start size of occurrence lists of literals
-#define TRIES 10 // number of trials for experiments
+#define TRIES 5 // number of trials for experiments
 /*
  * ***Data structures***
  * */
@@ -59,7 +61,7 @@ typedef struct solver {
 	int *posLiterals; // counter for positive literals in each clause
 	double *cumProbs; // buffer for cumulative probabilities in probSAT variant
 	int *bufferVars; // buffer used in choosing literal
-	int *bestFlipped, bestNoHorn;
+	int *bestFlipped, bestNoHorn; // best number of horn clauses
 	Literal *literals;
 } Solver;
 
@@ -105,11 +107,11 @@ void updateSolver(Solver* solver, int lit);
 // Literal choice
 int getLitWalkSATSKC(Solver* solver, int nClause);
 int getLitWalkSATWithMake(Solver* solver, int nClause);
-int getLitProbSAT(Solver* solver, int nClause, double (*f)(double breakCount));
+int getLitProbSAT(Solver* solver, int nClause, double (*f)(int makeCount, int breakCount));
 int getLitProbSATexp(Solver* solver, int nClause);
 int getLitProbSATpoly(Solver* solver, int nClause);
-double probSATexp(double breakCount);
-double probSATpoly(double breakCount);
+double probSATexp(int makeCount, int breakCount);
+double probSATpoly(int makeCount, int breakCount);
 
 //Experiments
 void trendExperiment(Solver* solver, int maxFlips);
@@ -132,18 +134,19 @@ int main(int argc, char **argv){
 		setupSolver(&solver);
 		DEBUG_PRINT(("skip neg literal: %d\n", skipNegLit));
 		if(mode == 0){
-			print_status_flag=1;
+			print_status_flag=0;
 			print_remaining_clauses_flag=0;
-			solve(&solver, getLitWalkSATSKC, 20);
+			print_optimum_flag = 1;
+			solve(&solver, getLitProbSATexp, 200);
 		}else if(mode == 1){
 			trendExperiment(&solver, MAX_FLIPS);
 		}else if(mode == 2){
 			walkSATExperiment(&solver, MAX_FLIPS, nPoints);
 		}else if(mode == 3){
-			nPoints = 30;
+			nPoints = 20;
 			probSATexpExperiment(&solver, MAX_FLIPS, nPoints);
 		}else if(mode == 4){
-			nPoints = 30;
+			nPoints = 20;
 			probSATpolyExperiment(&solver, MAX_FLIPS, nPoints);
 		}else if(mode == 5){
 			trendSkipExperiment(&solver, MAX_FLIPS);
@@ -381,7 +384,6 @@ void solve(Solver* solver, int (* getLiteral)(Solver* solver, int nClause), int 
 		   DEBUG_PRINT(("Done\n"));
 	   	   break;
 		}
-		DEBUG_PRINT(("chosen clause: %d\n", clause));
 		lit = (*getLiteral)(solver, clause);
 		updateSolver(solver, lit);
 		flipLiteral(solver, lit);
@@ -629,39 +631,51 @@ void walkSATWithMakeExperiment(Solver* solver, int maxFlips, int nPoints){
 }
 
 void probSATexpExperiment(Solver* solver, int maxFlips, int nPoints){
-	double startValue = 1.0, endValue = 20.0;
-	int i, j, sum;
+	double cbStart = 1.0, cbEnd = 4.0;
+	double cmStart = 0.0, cmEnd = 2.0;
+	int i, j, k, sum;
 	print_optimum_flag = 0;
-	cbProbSATexp = startValue;
-	for(i = 0; i < nPoints; i++){
-		sum = 0;
-		for(j = 0; j < TRIES; j++){
-			solve(solver, getLitProbSATexp, maxFlips);
-			sum += solver->nClauses - solver->bestNoHorn;
-			reset(solver);
-		}
-		printf(",%d", sum / TRIES);
-		cbProbSATexp += (double) (endValue - startValue) / (double) (nPoints-1);
-	}	
-	printf("\n");
+	cbProbSATexp = cbStart;
+	for(k = 0; k < nPoints; k++){
+		cmProbSATexp = cmStart;
+		for(i = 0; i < nPoints; i++){
+			sum = 0;
+			for(j = 0; j < TRIES; j++){
+				solve(solver, getLitProbSATexp, maxFlips);
+				sum += solver->nClauses - solver->bestNoHorn;
+				reset(solver);
+			}
+			if(i != 0) printf(",");
+		   	printf("%d", sum / TRIES);
+			cmProbSATexp += (cmEnd - cmStart) / (double) (nPoints - 1);
+		}	
+		cbProbSATexp += (cbEnd - cbStart ) / (double) (nPoints-1);
+		printf("\n");
+	}
 }
 
 void probSATpolyExperiment(Solver* solver, int maxFlips, int nPoints){
-	double startValue = 1.0, endValue = 20.0;
-	int i, j, sum;
+	double cbStart = 1.0, cbEnd = 4.0;
+	double cmStart = -1.0, cmEnd = 1.0;
+	int i, j, k, sum;
 	print_optimum_flag = 0;
-	cbProbSATpoly = startValue;
-	for(i = 0; i < nPoints; i++){
-		sum = 0;
-		for(j = 0; j < TRIES; j++){
-			solve(solver, getLitProbSATpoly, maxFlips);
-			sum += solver->nClauses - solver->bestNoHorn;
-			reset(solver);
-		}
-		printf(",%d", sum / TRIES);
-		cbProbSATpoly += (double) (endValue - startValue) / (double) (nPoints-1);
-	}	
-	printf("\n");
+	cbProbSATpoly = cbStart;
+	for(k = 0; k < nPoints; k++){
+		cmProbSATpoly = cmStart;
+		for(i = 0; i < nPoints; i++){
+			sum = 0;
+			for(j = 0; j < TRIES; j++){
+				solve(solver, getLitProbSATpoly, maxFlips);
+				sum += solver->nClauses - solver->bestNoHorn;
+				reset(solver);
+			}
+			if(i != 0) printf(",");
+			printf("%d", sum / TRIES);
+			cmProbSATpoly += (cmEnd - cmStart) / (double) (nPoints - 1);
+		}	
+		cbProbSATpoly += (cbEnd - cbStart) / (double) (nPoints-1);
+		printf("\n");
+	}
 }
 
 void reset(Solver* solver){
@@ -760,7 +774,7 @@ int getLitWalkSATWithMake(Solver* solver, int nClause){
 	DEBUG_PRINT(("Candidate literals: "));
 	DEBUG_PRINT_iARRAY(solver->bufferVars, cnt);
 	assert(cnt > 0);
-	if(max > 0 || ((float) rand() / (float) RAND_MAX > pWalkSATSKC))
+	if(max >= 0 || ((float) rand() / (float) RAND_MAX > pWalkSATSKC)) // README: maybe try different cutoff values for max
 		return solver->bufferVars[rand() % cnt];
 	else // if minimum is not zero take a random step with propability pWalkSATSKC
 	{
@@ -770,35 +784,37 @@ int getLitWalkSATWithMake(Solver* solver, int nClause){
 	
 }
 
-double probSATexp(double breakCount){
-	return pow(cbProbSATexp, -breakCount);
+double probSATexp(int makeCount, int breakCount){
+	return pow(cmProbSATexp, makeCount) / pow(cbProbSATexp, breakCount);
 }
 
 int getLitProbSATexp(Solver* solver, int nClause){
 	return getLitProbSAT(solver, nClause, probSATexp);
 }
 
-double probSATpoly(double breakCount){
-	return pow(epsilon + breakCount, -cbProbSATpoly);
+double probSATpoly(int makeCount, int breakCount){
+	return pow(makeCount, cmProbSATpoly) / pow(epsilon + breakCount, cbProbSATpoly);
 }
 
 int getLitProbSATpoly(Solver* solver, int nClause){
 	return getLitProbSAT(solver, nClause, probSATpoly);
 }
 
-int getLitProbSAT(Solver* solver, int nClause, double (*f)(double breakCount)){
+int getLitProbSAT(Solver* solver, int nClause, double (*f)(int makeCount, int breakCount)){
 	int* clause = solver->clauses[nClause];
-	int size, i, lit, breakCount;
+	int size, i, lit, breakCount, makeCount;
 	double prob, r;
 	size = solver->clauses[nClause+1] - solver->clauses[nClause];
 	lit = clause[0];
+	makeCount = getMakeCount(solver, lit);
 	breakCount = getBreakCount(solver, lit, 0, 0);
-	prob = f(breakCount);
+	prob = f(makeCount, breakCount);
 	solver->cumProbs[0] = prob;
 	for(i = 1; i < size; i++){
 		lit = clause[i];
+		makeCount = getMakeCount(solver, lit);
 		breakCount = getBreakCount(solver, lit, 0, 0);
-		prob = f(breakCount);
+		prob = f(makeCount, breakCount);
 		solver->cumProbs[i] = solver->cumProbs[i-1] + prob;
 	}
 	r = ((double) rand() / (float) RAND_MAX) * solver->cumProbs[size-1];
