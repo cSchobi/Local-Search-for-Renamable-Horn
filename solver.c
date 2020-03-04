@@ -34,9 +34,9 @@ int nPoints = 10;
 int print_remaining_clauses_flag = 0;
 int print_optimum_flag = 0;
 int print_status_flag = 0;
-double pWalkSATSKC = 0.567;
-double cbProbSATexp = 2.5;
-double cbProbSATpoly = 2.3;
+double pWalkSATSKC = 0.1; //0.567;
+double cbProbSATexp = 10; //2.5;
+double cbProbSATpoly = 10; //2.3;
 const double epsilon = 1;
 int mode = -1; 
 
@@ -104,6 +104,7 @@ void updateSolver(Solver* solver, int lit);
 
 // Literal choice
 int getLitWalkSATSKC(Solver* solver, int nClause);
+int getLitWalkSATWithMake(Solver* solver, int nClause);
 int getLitProbSAT(Solver* solver, int nClause, double (*f)(double breakCount));
 int getLitProbSATexp(Solver* solver, int nClause);
 int getLitProbSATpoly(Solver* solver, int nClause);
@@ -114,6 +115,7 @@ double probSATpoly(double breakCount);
 void trendExperiment(Solver* solver, int maxFlips);
 void trendSkipExperiment(Solver* solver, int maxFlips);
 void walkSATExperiment(Solver* solver, int maxFlips, int nPoints);
+void walkSATWithMakeExperiment(Solver* solver, int maxFlips, int nPoints);
 void probSATexpExperiment(Solver* solver, int maxFlips, int nPoints);
 void probSATpolyExperiment(Solver* solver, int maxFlips, int nPoints);
 void parse_parameters(int argc, char *argv[]);
@@ -138,13 +140,15 @@ int main(int argc, char **argv){
 		}else if(mode == 2){
 			walkSATExperiment(&solver, MAX_FLIPS, nPoints);
 		}else if(mode == 3){
-			nPoints = 20;
+			nPoints = 30;
 			probSATexpExperiment(&solver, MAX_FLIPS, nPoints);
 		}else if(mode == 4){
-			nPoints = 20;
+			nPoints = 30;
 			probSATpolyExperiment(&solver, MAX_FLIPS, nPoints);
 		}else if(mode == 5){
 			trendSkipExperiment(&solver, MAX_FLIPS);
+		}else if(mode == 6){
+			walkSATWithMakeExperiment(&solver, MAX_FLIPS, nPoints);
 		}else{
 			printf("invalid mode\n");
 			exit(0); 
@@ -559,8 +563,8 @@ int countHornClauses(Solver *solver){
 
 void trendExperiment(Solver* solver, int maxFlips){
 	int i,n;
-	int (*heuristics[])(Solver* solver, int nClause) = {getLitWalkSATSKC, getLitProbSATexp, getLitProbSATpoly};
-	char* heuristic_names[] = {"WalkSATSKC", "probSATexp", "probSATpoly"};
+	int (*heuristics[])(Solver* solver, int nClause) = {getLitWalkSATSKC, getLitProbSATexp, getLitProbSATpoly, getLitWalkSATWithMake};
+	char* heuristic_names[] = {"WalkSATSKC", "probSATexp", "probSATpoly", "WalkSATWithMake"};
 	n = sizeof(heuristics) / sizeof(heuristics[0]);
 	print_remaining_clauses_flag = 1;
 	print_optimum_flag = 1;
@@ -607,8 +611,25 @@ void walkSATExperiment(Solver* solver, int maxFlips, int nPoints){
 	printf("\n");
 }
 
+void walkSATWithMakeExperiment(Solver* solver, int maxFlips, int nPoints){
+	pWalkSATSKC = 0.0;
+	int i, j, sum;
+	print_optimum_flag = 0;
+	for(i = 0; i < nPoints; i++){
+		sum = 0;
+		for(j = 0; j < TRIES; j++){
+			solve(solver, getLitWalkSATWithMake, maxFlips);
+			sum += solver->nClauses - solver->bestNoHorn;
+			reset(solver);
+		}
+		printf(",%d", sum / TRIES);
+		pWalkSATSKC += (double) 1 / (double) (nPoints-1);
+	}	
+	printf("\n");
+}
+
 void probSATexpExperiment(Solver* solver, int maxFlips, int nPoints){
-	double startValue = 1.0, endValue = 4.0;
+	double startValue = 1.0, endValue = 20.0;
 	int i, j, sum;
 	print_optimum_flag = 0;
 	cbProbSATexp = startValue;
@@ -626,7 +647,7 @@ void probSATexpExperiment(Solver* solver, int maxFlips, int nPoints){
 }
 
 void probSATpolyExperiment(Solver* solver, int maxFlips, int nPoints){
-	double startValue = 1.0, endValue = 4.0;
+	double startValue = 1.0, endValue = 20.0;
 	int i, j, sum;
 	print_optimum_flag = 0;
 	cbProbSATpoly = startValue;
@@ -716,6 +737,37 @@ int getLitWalkSATSKC(Solver* solver, int nClause){
 		DEBUG_PRINT(("Taking random step\n"));
 		return clause[rand() % size];				
 	}
+}
+
+int getLitWalkSATWithMake(Solver* solver, int nClause){
+	int* clause = solver->clauses[nClause];
+	int size, i, max , lit, cnt = 0, value;
+	max = -solver->nClauses;
+	size = solver->clauses[nClause+1] - solver->clauses[nClause];
+	for(i = 0; i < size; i++){
+		lit = clause[i];
+		if(skipNegLit && !isPosLit(solver, lit)) continue; // should only negative literals be considered?
+		value = getMakeCount(solver, lit) - getBreakCount(solver, lit, 0, 0);
+		if(value > max){
+			max = value;
+			cnt = 0;
+		}
+		if(value == max){
+			solver->bufferVars[cnt] = lit;
+			cnt++;
+		}
+	}
+	DEBUG_PRINT(("Candidate literals: "));
+	DEBUG_PRINT_iARRAY(solver->bufferVars, cnt);
+	assert(cnt > 0);
+	if(max > 0 || ((float) rand() / (float) RAND_MAX > pWalkSATSKC))
+		return solver->bufferVars[rand() % cnt];
+	else // if minimum is not zero take a random step with propability pWalkSATSKC
+	{
+		DEBUG_PRINT(("Taking random step\n"));
+		return clause[rand() % size];				
+	}
+	
 }
 
 double probSATexp(double breakCount){

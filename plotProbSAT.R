@@ -1,9 +1,9 @@
 #!/usr/bin/env Rscript
 args = commandArgs(trailingOnly = TRUE)
 file = args[1]
-nPoints = 20
+nPoints = 30
 startValue = 1.0
-endValue = 4.0
+endValue = 20.0
 #load .csv file
 file.path("statistics", paste(file, ".csv", sep=""))
 experiments = read.csv(file.path("statistics", paste(file, ".csv", sep="")), 
