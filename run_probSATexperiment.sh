@@ -2,10 +2,10 @@
 
 EXPERIMENTS=("probSATexp_" "probSATpoly_")
 MODES=("3" "4")
-CBSTARTS=("1.0" "1.0")
-CBENDS=("4.0" "4.0")
-CMSTARTS=("0.0" "-1.0")
-CMENDS=("2.0" "1.0")
+CBSTARTS=("1.0" "-2.0")
+CBENDS=("20.0" "10")
+CMSTARTS=("0.0" "-2.0")
+CMENDS=("20.0" "10.0")
 NPOINTS=20
 for ((i=0; i < ${#EXPERIMENTS[@]};++i));do
 	EXPERIMENT=${EXPERIMENTS[i]}
