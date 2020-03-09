@@ -59,9 +59,11 @@ typedef struct solver {
 	int *memory, *flipped;
 	int **clauses; // array with pointers into memory at the start and end of the clauses
 	int *posLiterals; // counter for positive literals in each clause
+	int *nonHorn, *whereNonHorn; // array with clauses that are nonHorn and array which contains position of each clause in nonHorn
+	int numNonHorn;
 	double *cumProbs; // buffer for cumulative probabilities in probSAT variant
 	int *bufferVars; // buffer used in choosing literal
-	int *bestFlipped, bestNoHorn; // best number of horn clauses
+	int *bestFlipped, bestNumHorn; // best number of horn clauses
 	Literal *literals;
 } Solver;
 
@@ -103,6 +105,8 @@ int areAllClausesHorn(Solver* solver);
 // update solver
 void updateOptimum(Solver* solver);
 void updateSolver(Solver* solver, int lit);
+void addNonHornClause(Solver* solver, int nClause);
+void removeNonHornClause(Solver* solver, int nClause);
 
 // Literal choice
 int getLitWalkSATSKC(Solver* solver, int nClause);
@@ -247,12 +251,15 @@ void init(Solver* solver){
 	solver->clauses = NULL;
 	solver->flipped = NULL;
 	solver->posLiterals = NULL;
+	solver->nonHorn = NULL;
+	solver->whereNonHorn = NULL;
 	solver->cumProbs = NULL;
 	solver->bestFlipped = NULL;
 	solver->literals = NULL;
 	solver->bufferVars = NULL;
 	solver->nVars = 0;
 	solver->nClauses = 0;
+	solver->numNonHorn = 0;
 }
 
 void allocate_memory(Solver* solver){
@@ -262,6 +269,8 @@ void allocate_memory(Solver* solver){
 	solver->clauses[0] = solver->memory;
 	solver->flipped = (int *) calloc(solver->nVars , sizeof(int)); // flip status of literal (-1: literal is flipped, 1: literal is not flipped)
 	solver->posLiterals = (int *) calloc(solver->nClauses, sizeof(int)); // number of positive literals in each clause
+	solver->nonHorn = (int *) calloc(solver->nClauses, sizeof(int)); // number of positive literals in each clause
+	solver->whereNonHorn = (int *) calloc(solver->nClauses, sizeof(int)); // number of positive literals in each clause
 	solver->cumProbs = (double *) calloc(solver->nVars, sizeof(double));
 	solver->bestFlipped = (int *) calloc(solver->nVars, sizeof(int));
 	solver->literals = (Literal *) calloc(solver->nVars, sizeof(Literal));
@@ -276,7 +285,6 @@ void allocate_memory(Solver* solver){
 		solver->literals[i].negSize = START_SIZE;
 		solver->literals[i].posClauses = calloc(START_SIZE, sizeof(int));
 		solver->literals[i].negClauses = calloc(START_SIZE, sizeof(int));
-
 	}
 }
 
@@ -337,18 +345,20 @@ void free_solver(Solver* solver){
 	solver->nClauses = solver->nVars = 0;
 	free(solver->flipped); solver->flipped = NULL;
 	free(solver->posLiterals); solver->posLiterals = NULL;
+	free(solver->nonHorn); solver->nonHorn = NULL;
+	free(solver->whereNonHorn); solver->whereNonHorn = NULL;
 	free(solver->cumProbs); solver->cumProbs = NULL;
 	free(solver->bestFlipped); solver->bestFlipped = NULL;
 	free(solver->bufferVars); solver->bufferVars = NULL;
 }
 
 /*
- * initialize number of positive Literals and optimum number of horn clauses
+ * initialize number of positive Literals, nonHornClauses and optimum number of horn clauses
  * */
 void setupSolver(Solver* solver){
 	int i,j, size;
 	int* clause;
-	solver->bestNoHorn = 0;
+	solver->bestNumHorn = 0;
 	for(i = 0; i < solver->nClauses; i++){
 		solver->posLiterals[i] = 0;
 		clause = solver->clauses[i];
@@ -356,7 +366,9 @@ void setupSolver(Solver* solver){
 		for(j = 0; j < size; j++){
 			solver->posLiterals[i] += clause[j] > 0 ? 1 : 0;
 		}	
-		solver->bestNoHorn += solver->posLiterals[i] < 2 ? 1 : 0;
+		if(solver->posLiterals[i] > 1)
+			addNonHornClause(solver, i);
+		solver->bestNumHorn += solver->posLiterals[i] < 2 ? 1 : 0;
 	}	
 }
 
@@ -394,8 +406,8 @@ void solve(Solver* solver, int (* getLiteral)(Solver* solver, int nClause), int 
 		updateOptimum(solver);
 		print_status(solver);
 	}
-	if(print_optimum_flag) printf(",%d", solver->nClauses - solver->bestNoHorn); // print optimum at the end
-	DEBUG_PRINT(("Optimal number of horn clauses found: %i\n", solver->bestNoHorn));
+	if(print_optimum_flag) printf(",%d", solver->nClauses - solver->bestNumHorn); // print optimum at the end
+	DEBUG_PRINT(("Optimal number of horn clauses found: %i\n", solver->bestNumHorn));
 	DEBUG_PRINT_iARRAY(solver->bestFlipped, solver->nVars);
 }
 
@@ -418,26 +430,55 @@ int areAllClausesHorn(Solver* solver){
  * are still up to date when lit is flipped
  * */
 void updateSolver(Solver* solver, int nLit){
-	int i;
+	int i, nClause;
 	Literal* lit = &solver->literals[abs(nLit)-1];
+
 	for(i = 0; i < lit->nPosClauses; i++){
-		if(solver->flipped[abs(nLit)-1] == 1)
-			solver->posLiterals[lit->posClauses[i]]--;
-		else
-			solver->posLiterals[lit->posClauses[i]]++;
+		nClause = lit->posClauses[i];
+		if(solver->flipped[abs(nLit)-1] == 1){
+			solver->posLiterals[nClause]--;
+			if(solver->posLiterals[nClause] == 1)
+				removeNonHornClause(solver, nClause);
+		}else{
+			solver->posLiterals[nClause]++;
+			if(solver->posLiterals[nClause] == 2)
+				addNonHornClause(solver, nClause);
+		}
 	}
 	for(i = 0; i < lit->nNegClauses; i++){
-		if(solver->flipped[abs(nLit)-1] == 1)
-			solver->posLiterals[lit->negClauses[i]]++;
-		else
-			solver->posLiterals[lit->negClauses[i]]--;
+		nClause = lit->negClauses[i];
+		if(solver->flipped[abs(nLit)-1] == 1){
+			solver->posLiterals[nClause]++;
+			if(solver->posLiterals[nClause] == 2)
+				addNonHornClause(solver, nClause);
+		}else{
+			solver->posLiterals[nClause]--;
+			if(solver->posLiterals[nClause] == 1)
+				removeNonHornClause(solver, nClause);
+		}
 	}
+}
+
+/*
+ * add the clause to the array which contains all nonHorn clauses;
+ * also keep track where the clause is stored in the array
+ * */
+void addNonHornClause(Solver* solver, int nClause){
+	solver->nonHorn[solver->numNonHorn] = nClause;
+	solver->whereNonHorn[nClause] = solver->numNonHorn;
+	solver->numNonHorn++;
+}
+
+void removeNonHornClause(Solver* solver, int nClause){
+	solver->numNonHorn--;
+	solver->nonHorn[solver->whereNonHorn[nClause]] = solver->nonHorn[solver->numNonHorn];
+	solver->whereNonHorn[solver->nonHorn[solver->numNonHorn]] = solver->whereNonHorn[nClause];
 }
 
 void updateOptimum(Solver* solver){
 	int cntHorn = countHornClauses(solver), i;
-	if(cntHorn > solver->bestNoHorn){
-		solver->bestNoHorn = cntHorn;
+	if(cntHorn > solver->bestNumHorn){
+		solver->bestNumHorn = cntHorn;
 		for(i = 0; i < solver->nVars; i++){
 			solver->bestFlipped[i] = solver->flipped[i];
 		}
@@ -455,17 +496,8 @@ void flipLiteral(Solver* solver, int nLit){
  * return -1 if no nonHorn clause exists
  * */
 int getNonHornClause(Solver* solver){
-	int i, nNonHorn = 0;
-	int isNonHornClauses[solver->nClauses];
-	for(i = 0; i < solver->nClauses; i++){
-		if(isNonHorn(solver, i)){
-			isNonHornClauses[nNonHorn++] = i;
-		}
-	}
-	DEBUG_PRINT(("Number of NonHorn clauses: %i\n", nNonHorn));
-	if(nNonHorn > 0) return isNonHornClauses[rand() % nNonHorn];
-	else return -1;
-	
+	if(solver->numNonHorn == 0) return -1;
+	else return solver->nonHorn[rand() % solver->numNonHorn];
 }
 
 // return 1 if clause  is not a horn clause, 0 otherwise
@@ -531,6 +563,14 @@ void print_status(Solver* solver){
 	for(i = 1; i <= solver->nVars; i++)
 		printf("%3d ", getMakeCount(solver, i));
 	printf("| make count\n");
+	printf("numNonHorn: %d\n", solver->numNonHorn);
+	printf("Non Horn:\n");
+	for(i = 0; i < solver->nClauses; i++)
+		printf("%3d ", solver->nonHorn[i]);
+	printf("\nWhere non Horn\n");
+	for(i = 0; i < solver->nClauses; i++)
+		printf("%3d ", solver->whereNonHorn[i]);
+	printf("\n");
 }
 
 int countHornClauses(Solver *solver){
@@ -601,7 +641,7 @@ void walkSATExperiment(Solver* solver, int maxFlips, int nPoints){
 		sum = 0;
 		for(j = 0; j < TRIES; j++){
 			solve(solver, getLitWalkSATSKC, maxFlips);
-			sum += solver->nClauses - solver->bestNoHorn;
+			sum += solver->nClauses - solver->bestNumHorn;
 			reset(solver);
 		}
 		printf(",%d", sum / TRIES);
@@ -618,7 +658,7 @@ void walkSATWithMakeExperiment(Solver* solver, int maxFlips, int nPoints){
 		sum = 0;
 		for(j = 0; j < TRIES; j++){
 			solve(solver, getLitWalkSATWithMake, maxFlips);
-			sum += solver->nClauses - solver->bestNoHorn;
+			sum += solver->nClauses - solver->bestNumHorn;
 			reset(solver);
 		}
 		printf(",%d", sum / TRIES);
@@ -639,7 +679,7 @@ void probSATexpExperiment(Solver* solver, int maxFlips, int nPoints){
 			sum = 0;
 			for(j = 0; j < TRIES; j++){
 				solve(solver, getLitProbSATexp, maxFlips);
-				sum += solver->nClauses - solver->bestNoHorn;
+				sum += solver->nClauses - solver->bestNumHorn;
 				reset(solver);
 			}
 			if(i != 0) printf(",");
@@ -663,7 +703,7 @@ void probSATpolyExperiment(Solver* solver, int maxFlips, int nPoints){
 			sum = 0;
 			for(j = 0; j < TRIES; j++){
 				solve(solver, getLitProbSATpoly, maxFlips);
-				sum += solver->nClauses - solver->bestNoHorn;
+				sum += solver->nClauses - solver->bestNumHorn;
 				reset(solver);
 			}
 			if(i != 0) printf(",");
