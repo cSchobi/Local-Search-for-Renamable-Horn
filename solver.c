@@ -39,6 +39,7 @@ double cbProbSATpoly = 8.0; //2.3;
 double cmProbSATpoly = 6.0;
 const double epsilon = 1;
 int mode = -1; 
+const int trackBestSolution_flag = 0;
 
 #define MAX_FLIPS 1000
 #define START_SIZE 16 // start size of occurrence lists of literals
@@ -68,6 +69,7 @@ typedef struct solver {
 } Solver;
 
 // Parsing
+void parse_parameters(int argc, char *argv[]);
 int parse(Solver* solver, char *fileName);
 int skip_comment(FILE* file);
 
@@ -93,14 +95,9 @@ void solve(Solver* solver, int (* getLiteral)(Solver* solver, int nClause), int 
 int getNonHornClause(Solver* solver);
 int getBreakCount(Solver* solver, int nLit, int minBreak, int earlyBreak);
 int getMakeCount(Solver* solver, int nLit);
-int countPosLit(Solver* solver, int nClause);
 int countHornClauses(Solver *solver);
-int isHorn(Solver* solver, int nClause);
-int isNonHorn(Solver* solver, int nClause);
 int isPosLit(Solver* solver, int lit);
-int isPosInClause(Solver* solver, int nClause, int lit);
 void flipLiteral(Solver* solver, int nLit);
-int areAllClausesHorn(Solver* solver);
 
 // update solver
 void updateOptimum(Solver* solver);
@@ -124,7 +121,6 @@ void walkSATExperiment(Solver* solver, int maxFlips, int nPoints);
 void walkSATWithMakeExperiment(Solver* solver, int maxFlips, int nPoints);
 void probSATexpExperiment(Solver* solver, int maxFlips, int nPoints);
 void probSATpolyExperiment(Solver* solver, int maxFlips, int nPoints);
-void parse_parameters(int argc, char *argv[]);
 
 /* 
  * ************************************************************************
@@ -359,6 +355,7 @@ void setupSolver(Solver* solver){
 	int i,j, size;
 	int* clause;
 	solver->bestNumHorn = 0;
+	solver->numNonHorn = 0;
 	for(i = 0; i < solver->nClauses; i++){
 		solver->posLiterals[i] = 0;
 		clause = solver->clauses[i];
@@ -414,15 +411,7 @@ void solve(Solver* solver, int (* getLiteral)(Solver* solver, int nClause), int 
 void print_remaining_clauses(Solver* solver, int i){
 		if(!print_remaining_clauses_flag) return;
 		if(i != 0) printf(",");
-		printf("%d", solver->nClauses - countHornClauses(solver));
-}
-
-int areAllClausesHorn(Solver* solver){
-	int i;
-	for(i = 0; i < solver->nClauses; i++){
-		if(solver->posLiterals[i] > 1) return 0;
-	}
-	return 1;
+		printf("%d", solver->numNonHorn);
 }
 
 /*
@@ -476,11 +465,13 @@ void removeNonHornClause(Solver* solver, int nClause){
 }
 
 void updateOptimum(Solver* solver){
-	int cntHorn = countHornClauses(solver), i;
+	int cntHorn = solver->nClauses - solver->numNonHorn, i;
 	if(cntHorn > solver->bestNumHorn){
 		solver->bestNumHorn = cntHorn;
-		for(i = 0; i < solver->nVars; i++){
-			solver->bestFlipped[i] = solver->flipped[i];
+		if(trackBestSolution_flag){
+			for(i = 0; i < solver->nVars; i++){
+				solver->bestFlipped[i] = solver->flipped[i];
+			}
 		}
 	}
 }
@@ -500,47 +491,11 @@ int getNonHornClause(Solver* solver){
 	else return solver->nonHorn[rand() % solver->numNonHorn];
 }
 
-// return 1 if clause  is not a horn clause, 0 otherwise
-int isNonHorn(Solver* solver, int nClause){
-	return solver->posLiterals[nClause] > 1;
-}
-
-int isHorn(Solver* solver, int nClause){
-	return 1 - isNonHorn(solver, nClause);
-}
-
-/*
- * count the number of positive literals in the clause
- * */
-int countPosLit(Solver* solver, int nClause){
-	int* clause = solver->clauses[nClause];
-	int size = solver->clauses[nClause+1] - solver->clauses[nClause], i, literal, posLit = 0;
-	for(i = 0; i < size; i++){
-		literal = clause[i];
-		if(solver->flipped[abs(literal)-1] * literal > 0) posLit++;
-	}
-	return posLit;
-}
-
 /*
  * return true if given literal is positive
  * */
 int isPosLit(Solver* solver, int lit){
 	return solver->flipped[abs(lit)-1] * lit > 0;
-}
-
-/*
- * returns true if given literal is positive in given clause
- * */
-int isPosInClause(Solver* solver, int nClause, int lit){
-	int	i = 0;
-	int *clause = solver->clauses[nClause];
-	int size = solver->clauses[nClause+1] - solver->clauses[nClause];
-	while(abs(clause[i]) != abs(lit) && i < size) i++; // use size to avoid infinite loop
-	if(i < size && abs(clause[i]) == abs(lit))
-		return clause[i] * solver->flipped[abs(lit)-1] > 0;
-	else // literal not found
-		return 0;
 }
 
 void print_status(Solver* solver){
@@ -574,11 +529,7 @@ void print_status(Solver* solver){
 }
 
 int countHornClauses(Solver *solver){
-	int i, nHorn = 0;
-	for(i = 0; i < solver->nClauses; i++){
-		nHorn += isHorn(solver, i);
-	}
-	return nHorn;
+	return solver->nClauses - solver->numNonHorn;
 }
 
 void trendExperiment(Solver* solver, int maxFlips){
