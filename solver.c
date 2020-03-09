@@ -40,7 +40,7 @@ double cmProbSATpoly = 6.0;
 const double epsilon = 1;
 int mode = -1; 
 
-#define MAX_FLIPS 1600
+#define MAX_FLIPS 1000
 #define START_SIZE 16 // start size of occurrence lists of literals
 #define TRIES 10 // number of trials for experiments
 
@@ -135,8 +135,8 @@ int main(int argc, char **argv){
 		DEBUG_PRINT(("skip neg literal: %d\n", skipNegLit));
 		if(mode == 0){
 			printf("Testing mode\n");
-			print_status_flag=0;
-			print_remaining_clauses_flag=0;
+			print_status_flag=1;
+			print_remaining_clauses_flag=1;
 			print_optimum_flag = 1;
 			solve(&solver, getLitProbSATexp, 200);
 		}else if(mode == 1){
@@ -383,6 +383,7 @@ void solve(Solver* solver, int (* getLiteral)(Solver* solver, int nClause), int 
 		print_remaining_clauses(solver, i);
 		DEBUG_PRINT(("Trie: %i\n", i));
 		clause = getNonHornClause(solver);
+		DEBUG_PRINT(("Chosen clause: %i\n", clause));
 		if(clause == -1){
 		   DEBUG_PRINT(("Done\n"));
 	   	   break;
@@ -469,7 +470,7 @@ int getNonHornClause(Solver* solver){
 
 // return 1 if clause  is not a horn clause, 0 otherwise
 int isNonHorn(Solver* solver, int nClause){
-	return countPosLit(solver, nClause) > 1;
+	return solver->posLiterals[nClause] > 1;
 }
 
 int isHorn(Solver* solver, int nClause){
@@ -517,16 +518,16 @@ void print_status(Solver* solver){
 	printf("Horn clauses: %i\n", countHornClauses(solver));
 	for(i = 0; i < solver->nVars; i++)
 		printf("--");
-	printf("\n");
+	printf("\n    ");
 	for(i = 0; i < solver->nVars; i++)
 		printf("%3d ", i+1);
-	printf("\n");
+	printf("\n    ");
 	for(i = 0; i < solver->nVars; i++)
 		printf("%3d ", solver->flipped[i]);
-	printf("| flip Status\n");
+	printf("| flip Status\n    ");
 	for(i = 1; i <= solver->nVars; i++)
 		printf("%3d ", getBreakCount(solver, i, 0, 0));
-	printf("| break count\n");
+	printf("| break count\n    ");
 	for(i = 1; i <= solver->nVars; i++)
 		printf("%3d ", getMakeCount(solver, i));
 	printf("| make count\n");
@@ -563,12 +564,14 @@ void boxPlotExperiment(Solver* solver, int maxFlips){
 	print_remaining_clauses_flag = 0;
 	print_optimum_flag = 1;
 	for(i = 0; i < n; i++){
-		printf("%s", heuristic_names[i]);
-		for(j = 0; j < TRIES; j++){
-			solve(solver, heuristics[i], maxFlips);
-			reset(solver);
+		for(skipNegLit = 0; skipNegLit < 2; skipNegLit++){
+			printf("%s[skip=%d]", heuristic_names[i], skipNegLit);
+			for(j = 0; j < TRIES; j++){
+				solve(solver, heuristics[i], maxFlips);
+				reset(solver);
+			}
+			printf("\n");
 		}
-		printf("\n");
 	}
 }
 
@@ -785,28 +788,41 @@ int getLitWalkSATWithMake(Solver* solver, int nClause){
 
 int getLitProbSAT(Solver* solver, int nClause, double (*f)(int makeCount, int breakCount)){
 	int* clause = solver->clauses[nClause];
-	int size, i, lit, breakCount, makeCount;
+	int size, i, lit, breakCount, makeCount, cnt;
 	double prob, r;
 	size = solver->clauses[nClause+1] - solver->clauses[nClause];
-	lit = clause[0];
-	makeCount = getMakeCount(solver, lit);
-	breakCount = getBreakCount(solver, lit, 0, 0);
-	prob = f(makeCount, breakCount);
-	solver->cumProbs[0] = prob;
-	for(i = 1; i < size; i++){
+	for(cnt = 0, i = 0; i < size; i++){
 		lit = clause[i];
+		if(skipNegLit && !isPosLit(solver, lit)) continue;
 		makeCount = getMakeCount(solver, lit);
 		breakCount = getBreakCount(solver, lit, 0, 0);
 		prob = f(makeCount, breakCount);
-		solver->cumProbs[i] = solver->cumProbs[i-1] + prob;
+		if(cnt == 0)
+			solver->cumProbs[cnt] = prob;
+		else
+			solver->cumProbs[cnt] = solver->cumProbs[cnt-1] + prob;
+		cnt++;
 	}
-	r = ((double) rand() / (double) RAND_MAX) * solver->cumProbs[size-1];
+	r = ((double) rand() / (double) RAND_MAX) * solver->cumProbs[cnt-1];
 	i = 0;
 	while(solver->cumProbs[i] < r) i++;
 	DEBUG_PRINT(("probabilities: "));
-	DEBUG_PRINT_dARRAY(solver->cumProbs, size);
+	DEBUG_PRINT_dARRAY(solver->cumProbs, cnt);
 	DEBUG_PRINT(("random double: %f\n", r));
-	return clause[i];
+	if(skipNegLit){
+		cnt = 0;
+		lit = 0;
+		while(!isPosLit(solver, clause[lit])) lit++;
+		while(cnt < i){
+			lit++;
+			while(!isPosLit(solver, clause[lit])) lit++;
+			cnt++;
+		}
+		DEBUG_PRINT(("Lit: %i\n", lit+1));
+		return clause[lit];
+	}
+	else
+		return clause[i];
 }
 
 double probSATexp(int makeCount, int breakCount){
