@@ -3,9 +3,9 @@
 EXPERIMENTS=("probSATexp_" "probSATpoly_")
 MODES=("3" "4")
 CBSTARTS=("1.0" "-2.0")
-CBENDS=("20.0" "10")
+CBENDS=("15.0" "10")
 CMSTARTS=("0.0" "-2.0")
-CMENDS=("20.0" "10.0")
+CMENDS=("15.0" "10.0")
 SKIPS=("0" "1")
 NPOINTS=20
 for SKIP in ${SKIPS[@]}
