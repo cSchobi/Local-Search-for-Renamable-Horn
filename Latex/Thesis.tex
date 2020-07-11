@@ -264,12 +264,12 @@ This work starts with a description of the algorithms walkSAT and probSAT. Then 
     \For{$try \leftarrow 1$ to maxTries}
       \State $a \leftarrow$ randomly chosen assignment of the variables in formula F
       \For {$step \leftarrow 1$ to maxSteps}
-        \If{a satisfies F} 
-          \State \Return{a}
+        \If{$a$ satisfies F} 
+          \State \Return{$a$}
         \EndIf
-        \State $c \leftarrow$ randomly selected clause unsatisfied under a
+        \State $c \leftarrow$ randomly selected clause unsatisfied under $a$
         \State $x \leftarrow$ variable selected from c according to heuristic function \textit{slc}
-        \State $a \leftarrow$ a with x flipped
+        \State $a \leftarrow$ $a$ with x flipped
       \EndFor
     \EndFor
     
@@ -301,15 +301,15 @@ Furthermore, their experiments showed that probSAT does beat walkSAT.
     \For{$try \leftarrow 1$ to maxTries}
     \State $a \leftarrow$ randomly generated assignment
     \For {$step \leftarrow 1$ to maxFlips}
-    \If{a satisfies F} 
-    \State \Return{a}
+    \If{$a$ satisfies F} 
+    \State \Return{$a$}
     \EndIf
-    \State $C \leftarrow$ randomly selected clause unsatisfied under a
+    \State $C \leftarrow$ randomly selected clause unsatisfied under $a$
     \ForAll{$x \in C$}
        \State compute $f(x,a)$
     \EndFor
-    \State x $\leftarrow$ random variable y $\in C$ according to probability $\frac{f(y,a)}{\sum_{z \in C}f(z,a)}$
-    \State a $\leftarrow$ a with x flipped
+    \State $x$ $\leftarrow$ random variable $y$ $\in C$ according to probability $\frac{f(y,a)}{\sum_{z \in C}f(z,a)}$
+    \State $a$ $\leftarrow$ $a$ with x flipped
     \EndFor
     \EndFor
     \State \Return{'no solution found'}
@@ -338,7 +338,7 @@ The DIMACS CNF file format is used to describe boolean expressions in cojunctive
   0
 \end{ex}
 \subsection{Parsing}
-The DIMACS CNF file is provided to the program via a command line argument. The parsing algorithm starts with skipping the optional comment lines at the beginning of the file. For this it is sufficient to look at the first character of the line. If that is a "c" then the parser reads all characters until a newline character appears. If the first character of the next line is  a "c" again, it continues as described above, otherwise it reads the problem line.\\ With the number of variables and clauses available, the necessary memory for storing the clauses can be allocated. All literals are stored in a contiguous array called \texttt{mem}. The parsing algorithm assumes that each variable appears at most once in each clause (A clause with \texttt{i} and \texttt{-i} is not allowed). Thus the size of \texttt{mem} is bounded from above by $v * c$. In the initial version of the implementation, \texttt{mem} is allocated with the upper bound as its size. This is, however, unpractical for large instances. For example an instance with $25000$ variables and $100.000$  clauses would require 10 Gigabyte just for the literals (with 4 bytes per literal). The current version allocates enough space for 6 literals per clause, as most clauses only have 3 literals (in the case of 3-SAT, clauses have at most or exactly 3 literals per clause).\\
+The DIMACS CNF file is provided to the program, that is implemented as part of this thesis, via a command line argument. The parsing algorithm starts with skipping the optional comment lines at the beginning of the file. For this it is sufficient to look at the first character of the line. If that is a "c" then the parser reads all characters until a newline character appears. If the first character of the next line is  a "c" again, it continues as described above, otherwise it reads the problem line.\\ With the number of variables and clauses available, the necessary memory for storing the clauses can be allocated. All literals are stored in a contiguous array called \texttt{mem}. The parsing algorithm assumes that each variable appears at most once in each clause (A clause with \texttt{i} and \texttt{-i} is not allowed). Thus the size of \texttt{mem} is bounded from above by $v * c$. In the initial version of the implementation, \texttt{mem} is allocated with the upper bound as its size. This is, however, unpractical for large instances. For example an instance with $25000$ variables and $100.000$  clauses would require 10 Gigabyte just for the literals (with 4 bytes per literal). The current version allocates enough space for 6 literals per clause, as most clauses only have 3 literals (in the case of 3-SAT, clauses have at most or exactly 3 literals per clause).\\
 The start and end of each clause are stored in an array \texttt{clauses} that contains pointers into the \texttt{mem} array. This array contains $c+1$ pointers. Each pointer points to a clause end and/or beginning.\\
 
 Next, the clauses are parsed. The literals are initially stored into a buffer array with size $v$. Once the character $0$ is encountered, the buffer is copied into the array \texttt{mem} and the corresponding pointers in \texttt{clauses} are set.  See also Figure \ref{fig:mem_clauses}. The first pointer in \texttt{clauses} is set to the beginning of \texttt{mem}. When inserting a clause, the first unset pointer in \texttt{clauses} has to be set to the previous pointer plus the size of the clause.
@@ -350,7 +350,7 @@ Next, the clauses are parsed. The literals are initially stored into a buffer ar
 \end{figure}
 \subsection{Searching}
 The search algorithm, presented in Algorithm \ref{alg:search}, works similar to WalkSAT. If all clauses are Horn clauses, the process is done. Otherwise a random non-Horn clause is picked. Then, a literal from that clause is picked according to the heuristic function \texttt{getLiteral}. This literal is then flipped, i.e. replaced with its negation. Finally, all internal data structures and the best solution found so far need to be updated.\\
-The flip status of each variable is stored in a array \texttt{flipped} that stores a 1 if the variable is not flipped and -1 if it is flipped. An additional array \texttt{posLiterals} of length $c$ stores the number of positive literals in each clause. Updating this array when flipping a variable is cheap in comparison to recomputing the number of positive literals for each clause from scratch. \\
+The flip status of each variable is stored in an array \texttt{flipped} that stores a 1 if the variable is not flipped and -1 if it is flipped. An additional array \texttt{posLiterals} of length $c$ stores the number of positive literals in each clause. Updating this array when flipping a variable is cheap in comparison to recomputing the number of positive literals for each clause from scratch. \\
 For the best solution the flip status and the number of Horn clauses is stored. If better solution is found, these are simply updated.\\
 The section \ref{sec:dat_struc_fast_search} will look at how non-Horn clauses can be found quickly, how to update the number of positive literals quickly and how to keep track of non-Horn clauses.
 \begin{algorithm}[ht]
@@ -391,42 +391,42 @@ Removing a non-Horn clause $i$ is a bit more tricky. The element $i$ in \texttt{
 After flipping literal $i$, the number of positive literals in each clause that contain literal $i$ needs to be updated. It would be inefficient to iterate over all clauses and look at the contained variables to see which clauses need to be updated since most literals appear in only a small number of clauses. This motivates a data structure where each literal knows in which clauses it occurs.\\
 The first possibility is to build up a matrix where each row represents a clause and each columns represents a variable. An entry at row $i$ and column $j$ with the value $1$ would indicate that the variable $j$ occurs in clause $i$ non-negated. The value $-1$ would indicate that the variable is negated and the value $0$ means that the variable does not occur in the clause. The advantage of this structure is that a lookup whether a variable appears in a clause or vice versa can be done quickly. On the other hand, iterating over all clauses that contain a variable would be slow because one would need to iterate over an entire column even if the variable occurs in only a few clauses. If the SAT instance has a lot of clauses this would become extremely inefficient. Furthermore, this approach requires a large amount of memory because the matrix has the size $v*c$.\\
 Since the matrix approach produces a matrix that is sparse for the most SAT instances, storing for each variable the clauses that contain it is better suited. The simplest way to do this is to use an array for each variable. The problem with this approach is that this data structure does not store the information whether the variable is negated or non-negated in each clause. This can be handled easily by using one array for clauses where the variable appears non-negated and one array for clauses where the variable appears negated.\\
-
-The implementation defines a \texttt{struct} for each literal which contains two arrays. One is for the clauses in which the variable appears non-negated and the other one for clauses in which it appears negated. The arrays are initialized with a size of 16 and are dynamically expanded if needed. The solver holds an array of these \texttt{structs} of length $v$ such that each variable has an instance of this \texttt{struct}.\\
+The implementation defines a \texttt{struct} for each variable which contains two arrays. One is for the clauses in which the variable appears non-negated and the other one for clauses in which it appears negated. The arrays are initialized with a size of 16 and are dynamically expanded if needed. The solver holds an array of these \texttt{structs} of length $v$ such that each variable has an instance of this \texttt{struct}.\\
 Keeping two arrays instead of just one also has the advantage that when flipping a variable the number of positive literals of the clauses in one array need to be incremented and the number of positive literals of the clauses in the other array decremented. Which array contains the clauses where the number of positive literals need be incremented depends on whether the variable is flipped from non-negated to negated or negated to non-negated.\\
 This data structure can be initialized during the parsing process. After a clause is fully parsed and added to the \texttt{mem} array, one can iterate over its literals and update the data structures of the respective variables.
 
 \subsubsection{Computing break count}
-Since the make and break count where defined in the context of SAT solving, a slight change in the definition for the renamable Horn problem is necessary. We define the break count of variable $i$ as the number of Horn clauses that would become non-Horn under the current renaming if the variable $i$ were to be flipped. Similarly, the make count is the number of non-Horn clauses that become Horn clauses by flipping variable $i$.\\
+Since the make and break count where defined in the context of SAT solving, a slight change in the definition for the renamable Horn problem is necessary. We define the break count of variable $i$ as the number of Horn clauses that would become non-Horn under the current renaming if the variable $i$ were to be flipped. \\
+Similarly, the make count is the number of non-Horn clauses that become Horn clauses by flipping variable $i$.\\
 
 One approach is to cache the make and break count and update after each flip. This way, one would need to iterate over all clauses of variable $i$ and update their number of positive literals. In some cases the break or make value for all variables that appear in such a clause need to be updated. For example, if the number of positive literals changes from 0 to 1, all negated literals in that clause could break the clause. Similarly, if the number of positive literals changes from 2 to 1, the make count of each positive literal in the clause needs to be decremented and the break count of each negative literal needs to be incremented. This approach is faster than computing the break and make count from scratch each time because the computation has to be done only for literals where the break or make count changes. But a few cases need to be considered when updating the counts. Furthermore, one still needs to carry along the make and break counts for each variable even if they are not needed or are only needed after a long time.\\
-Instead of caching and updating one can compute the break and make counts when necessary \cite{Faster_WalkSAT}. \cite{Faster_WalkSAT} claims to achieve a twice speedup over the latest WalkSAT implementation at the time of publication \cite{kautz}(version 50) that caches the break and make count. With the variables storing the clauses in which they appear, the break (and make) count can be computed quickly, as shown in Algorithm \ref{alg:break_count}. This algorithm takes advantage of the fact that WalkSAT only needs to know the variables with minimum break count and can therefore prematurely return if the current break count exceeds the minimal break count found so far. For probSAT this cannot be done because probSAT computes a probability distribution that depends on all break counts. As a consequence, the implementation for this procedure takes an additional parameter that controls whether the procedure can return prematurely. The computation of the make count is done in a similar fashion.\\
+Instead of caching and updating one can compute the break and make counts when necessary \cite{Faster_WalkSAT}. The implementation in \cite{Faster_WalkSAT} achieves a twice speedup over the latest WalkSAT implementation at the time of publication \cite{kautz}(version 50) that caches the break and make count. With the variables storing the clauses in which they appear, the break (and make) count can be computed quickly, as shown in Algorithm \ref{alg:break_count}. This algorithm takes advantage of the fact that WalkSAT only needs to know the variables with minimum break count and can therefore prematurely return if the current break count exceeds the minimal break count found so far. For probSAT this cannot be done because probSAT computes a probability distribution that depends on all break counts. As a consequence, the implementation for this procedure takes an additional parameter that controls whether the procedure can return prematurely. The computation of the make count is done in a similar fashion.\\
 \begin{algorithm}[ht]
   \caption{Computing break count}
   \label{alg:break_count}
   \begin{algorithmic}[1] 
     \Procedure {compute\_break}{$x$, $break_{min}$}    
     \State $break(x) \leftarrow 0$
-    \If{x is not flipped}
+    \If{$x$ is not flipped}
       \ForAll {$clause \in PosLitClauses(x)$}
           \If{PosLiterals(clause) == 1}
-            \State break(x)++
+            \State break($x$)++
            \EndIf
-           \If{break(x) > $break_{min}$}
-            \State \Return{break(x)}
+           \If{break($x$) > $break_{min}$}
+            \State \Return{break($x$)}
             \EndIf
       \EndFor
     \Else
-      \ForAll{ $clause \in NegLitClauses(x)$}
-          \If{PosLiterals(clause) == 1}
-            \State break(x)++
+      \ForAll{ $clause \in$ NegLitClauses($x$)}
+          \If{PosLiterals($clause$) == 1}
+            \State break($x$)++
           \EndIf
-          \If{break(x) > $break_{min}$}
-               \State \Return{break(x)}
+          \If{break($x$) > $break_{min}$}
+               \State \Return{break($x$)}
             \EndIf
         \EndFor
     \EndIf
-    \State \Return{break(x)}
+    \State \Return{break($x$)}
     \EndProcedure
   \end{algorithmic}
 \end{algorithm}
@@ -460,13 +460,13 @@ Experiments were done with CNF files from \cite{sat_race_2019} and \cite{satlib_
 \subsection{Parameter settings}
 Note that the following experiments were not done in a sequential order but rather done in a circular fashion in order to incorporate the findings from later experiments into previous experiments, e.g. the trend experiments are performed with the best parameter settings found in the experiments done for walkSAT and probSAT.
 \subsection{Number of flips}
-The first experiment was to find out how many flips should be performed. To this end a trend experiment which records the number of the current number of horn clauses was performed. Figure \ref{fig:trend} shows the trends of the examples. As a general rule of thumb it seems that the algorithms converge at about 3 times the number of variables in the instance. This is then used as the number of maximum flips for the following experiments.\\
+The first experiment was to find out how many flips should be performed. To this end a trend experiment which records the number of the current number of horn clauses was performed. Figure \ref{fig:trend} shows the trends of the examples. It seems that the algorithms converge after a number of flips that is 3 times the number of variables in the instance. This is then used as the number of maximum flips for the following experiments.\\
 
 In Figure \ref{fig:trend} one can see that for most examples the number of non Horn clauses decreases significantly. The instances \texttt{MM-23-2-2-2-2-3},\\ \texttt{Subisomorphism-g10-g27\_c18.cnf} and \texttt{qg1-07} are an exception to this.\\
 
-\texttt{MM-23-2-2-2-2-3} and \texttt{qg1-07} have a uncommonly large amount of clauses with a lot of literals. Roughly $50\%$ and $90\%$ of the clauses have more than 3 literals, respectively. Turning a non Horn clause with more literals into a Horn clause is harder than for a clause with fewer literals since it depends on more variables having the correct flip status. Since the algorithms first selects a non-Horn clause, they algorithms might try to make the clauses with more variables into Horn clauses instead of making the shorter clauses into Horn clauses and in doing so makes a lot of short clauses that are initially Horn non-Horn as a result. \\
+\texttt{MM-23-2-2-2-2-3} and \texttt{qg1-07} have a uncommonly large amount of clauses with a lot of literals. Roughly $50\%$ and $90\%$ of the clauses have more than 3 literals, respectively. Turning a non Horn clause with more literals into a Horn clause is harder than for a clause with fewer literals since it depends on more variables having the correct flip status. Since the algorithms first selects a non-Horn clause, the algorithms might try to make the clauses with more variables into Horn clauses instead of making the shorter clauses into Horn clauses and in doing so makes a lot of short clauses that are initially Horn non-Horn as a result. \\
 Here it is important to notice a difference between the satisfiability and renamable Horn problem. For SAT it suffices that a single literal in each clause is true whereas for renamable Horn all but one literal in a literal must be negated. This difference might be the cause why the algorithms don't work in these instances. A stochastic local search method that does not select a non Horn clause before selecting a literal might not have this problem.\\
-On the other hand, only $~5\%$ of the clauses of \texttt{Subisomorphism-g10-g27\_c18.cnf} have more than  literals. But many of these clauses have more than 10 literals and a few even have more than 70.\\
+On the other hand, only $~5\%$ of the clauses of \texttt{Subisomorphism-g10-g27\_c18.cnf} have more than 3  literals. But many of these clauses have more than 10 literals and a few even have more than 70.\\
 
 In summary, this suggests that instances with very long clauses or instances with a large amount of longer clauses are not well suited for the local search algorithms WalkSAT and probSAT.
 \begin{figure}[H]
@@ -533,7 +533,7 @@ Figure \ref{fig:walkSAT_exp} shows the result of these experiments. In general, 
 \subsection{ProbSAT}
 For each probSAT variant there are two parameters $c_m$ and $c_b$ that can be varied. Figures \ref{fig:probSAT_exp} and \ref{fig:probSAT_poly} show the performance with different parameter combinations (darker color means better). Each parameter is evaluated at 20 points. This gives 400 combinations in total. For each evaluation 10 runs are performed and the average of the best results is returned. \\
 
-As one can see in Figure \ref{fig:probSAT_exp}, only the instance \texttt{SocialGolfers-6-6-6-cp\_c18} has some shape in the parameter space visible. For all other instances either all parameter settings or all parameter combinations that have $c_b > 4$ and $c_m > 4$ perform equally well. Note that smaller $c_m$ and $c_b$ mean more undirected search and thus the algorithm performs more like a random walk. This means that for most instances that as long as some direction is given in the search process, the exact parameters do not matter. Note that for \texttt{MM-23-2-2-2-2-3} and \texttt{Subisomorphism-g10-g27\_c18} the results seem to vary a lot but the difference between best and worst result is only in the tens while there are still thousands of non Horn clauses. The chosen parameter settings for probSAT with an exponential probability distribution are $c_m = 8, c_b=4$.\\
+As one can see in Figure \ref{fig:probSAT_exp}, only the instance \texttt{SocialGolfers-6-6-6-cp\_c18} has a cone shape where the best results can be achieved. For all other instances either all parameter settings or all parameter combinations that have $c_b > 4$ and $c_m > 4$ perform equally well. Note that smaller $c_m$ and $c_b$ mean more undirected search and thus the algorithm performs more like a random walk. This means that for most instances that as long as some direction is given in the search process, the exact parameters do not matter. Note that for \texttt{MM-23-2-2-2-2-3} and \texttt{Subisomorphism-g10-g27\_c18} the results seem to vary a lot but the difference between best and worst result is only in the tens while there are still thousands of non Horn clauses. The chosen parameter settings for probSAT with an exponential probability distribution are $c_m = 8, c_b=4$.\\
 
 Figure \ref{fig:probSAT_poly} shows that the parameter space for the polynomial distribution looks similar to the exponential case but they have more of a cone shape similar to the parameter space of \texttt{SocialGolfers-6-6-6-cp\_c18}. The chosen parameters are $c_m = 5, c_b=6$.
 \begin{figure}[H]
@@ -622,14 +622,14 @@ Figure \ref{fig:probSAT_poly} shows that the parameter space for the polynomial 
 
 \subsection{Skipping negative literals}
 \label{sec:skip}
-The algorithms presented so far consider all literals that appear in a clause for flipping. All of them first select a non Horn clause. In order to turn a non Horn clause into a Horn clause, only positive literals need to be flipped. Thus one might skip negative literals during the variable selection.  The algorithm would be made greedier in the respect that it tries to make the chosen non Horn clause into a Horn clause.\\
+The algorithms presented so far consider all literals that appear in a clause for flipping. All of them first select a non Horn clause. In order to turn a non Horn clause into a Horn clause, only positive literals need to be flipped. Thus one might skip negative literals during the variable selection.  The algorithm would be made greedier because it would try to make the chosen non Horn clause into a Horn clause.\\
 
-The same experiments were repeated to evaluate whether this gives performance improvements. There it was observed that the same parameter settings give the best results. Furthermore, as shown in section \ref{sec:dir_comp} skipping negative literals gives always worse results. Thus it is not useful to skip negative literals.
+The same experiments were repeated to evaluate whether this gives performance improvements. There it was observed that the same parameter settings give the best results. Furthermore, as shown in section \ref{sec:dir_comp} skipping negative literals give always worse results. Thus it is not useful to skip negative literals.
 \subsection{Direct comparison}
 \label{sec:dir_comp}
 Figure \ref{fig:boxplots} shows a direct comparison of the algorithms for each SAT instance. The suffix $[skip=0]$ in the Figure means that negative literals are not skipped and $[skip=1]$ means that they are skipped. For each instance 10 runs are performed.\\
 
-Skipping negative literals always gives worse results. Furthermore, the $walkSATWithMake$ always outperforms $walkSATSKC$ which means that the make count does give useful information. In the instance \texttt{eq2csparrc162cbpwtcl16} $WalkSATWithMake$ significantly outperforms all other algorithms. In the remaining instances the probSAT algorithms are the best choice.
+Skipping negative literals always gives worse results. Furthermore, the \textit{walkSATWithMake} always outperforms \textit{walkSATSKC} which means that the make count does give useful information. In the instance \texttt{eq2csparrc162cbpwtcl16} \textit{WalkSATWithMake} significantly outperforms all other algorithms. In the remaining instances the probSAT algorithms are the best choice.
 \begin{figure}[H]
   \centering
   \begin{subfigure}{0.4\textwidth}
@@ -676,7 +676,7 @@ Skipping negative literals always gives worse results. Furthermore, the $walkSAT
 From the experiments for the parameter settings it becomes  obvious that the SAT problem and Horn renamable problem behave differently (for probSAT compare with figures given in \cite{probSAT}). The major reason for this might be that for SAT it suffices that one literal in each clause is true whereas for the renamable Horn problem all but one literal need to have the correct flip status. \\
 
 In summary, the local search algorithms WalkSAT an probSAT work very well in some instances. For example, in the instance \texttt{SocialGolfers-6-6-6-cp\_c18} the number of non-Horn clauses can be halved, taking the portion of non-Horn clauses from 75\% to 37\%. For the instances with very long clauses or instances with a large amount of long clauses the algorithms perform not well or very badly.\\
-Search algorithms that do not select a non-Horn clause before selecting a literal for flipping might circumvent this problem. 
+Search algorithms that do not select a non-Horn clause before selecting a literal for flipping might circumvent this problem. Alternatively, techniques that select clauses differently would improve the performance like clause smoothing.
 \clearpage
 \bibliography{references}
 \bibliographystyle{ieeetr}
