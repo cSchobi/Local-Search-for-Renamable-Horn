@@ -1,1 +1,2 @@
-Bachelor Thesis Project Christoph Schobesberger.
+As part of my Computer Science studies at Johannes Kepler University, I implemented a small program in order to experiment with local search algorithms for the Renamable Horn problem. For theoretical background, implementation details and experiments see the file 'Thesis.pdf'. 
+The algorithm is implemented in C and all graphs are generated with Rscript and Octave.
